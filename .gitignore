@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# 虚拟环境
+venv/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+
+# Claude Code
+.claude/
+
+# 运行时数据 (下载的音频 + 分离结果 + 数据库)
+downloads/
+separated/
+progress.db
+progress.db-shm
+progress.db-wal
+
+# Demucs 模型缓存 (~80MB+)
+models/
+
+# 临时文件
+*.tmp
+*.log
+
+# 其他无关文件
+vedio/
+
+# 分析报告（非项目代码）
+项目分析报告.md
+项目构建分析报告.md
