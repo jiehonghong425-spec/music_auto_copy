@@ -258,6 +258,70 @@ async def login_netease(phone: str = "", password: str = ""):
         raise HTTPException(500, f'登录异常: {str(e)[:100]}')
 
 
+@app.post("/api/login/qqmusic")
+async def login_qqmusic(phone: str = "", password: str = ""):
+    """QQ音乐手机号登录"""
+    if not phone or not password:
+        raise HTTPException(400, "手机号和密码不能为空")
+    try:
+        async with httpx.AsyncClient(timeout=15) as cli:
+            r = await cli.post(
+                'https://u.y.qq.com/cgi-bin/musicu.fcg',
+                json={'req_0': {'module': 'music.login.LoginServer', 'method': 'Login',
+                       'param': {'strAccount': phone, 'strPassword': password,
+                                 'loginType': 0, 'domain': 'qq.com'}}},
+                headers={'User-Agent': 'Mozilla/5.0', 'Referer': 'https://y.qq.com'},
+            )
+            if r.status_code == 200:
+                data = r.json()
+                login = data.get('req_0', {})
+                if login.get('code') == 0:
+                    musickey = login.get('data', {}).get('musickey', '')
+                    if musickey:
+                        config.cookies.qqmusic = musickey
+                        config.save('./config.yaml')
+                        return {'ok': True, 'token': musickey}
+                msg = login.get('data', {}).get('errMsg', '') or f'code={login.get(\"code\")}'
+                if '密码' in msg: return {'ok': False, 'error': '密码错误'}
+                if '验证' in msg: return {'ok': False, 'error': '需要验证码'}
+                return {'ok': False, 'error': msg or '登录失败，请用Cookie方式'}
+            return {'ok': False, 'error': 'API无响应'}
+    except Exception as e:
+        raise HTTPException(500, f'登录异常: {str(e)[:100]}')
+
+
+@app.post("/api/login/kugou")
+async def login_kugou(phone: str = "", password: str = ""):
+    """酷狗手机号登录"""
+    if not phone or not password:
+        raise HTTPException(400, "手机号和密码不能为空")
+    try:
+        import hashlib
+        pwd_md5 = hashlib.md5(password.encode()).hexdigest()
+        async with httpx.AsyncClient(timeout=15) as cli:
+            r = await cli.post(
+                'http://login.user.kugou.com/v4/login_by_pwd',
+                data={'username': phone, 'password': pwd_md5},
+                headers={'User-Agent': 'Mozilla/5.0', 'Referer': 'https://www.kugou.com'},
+            )
+            if r.status_code == 200:
+                data = r.json()
+                if data.get('status') == 1:
+                    token = data.get('data', {}).get('token', '') or data.get('data', {}).get('sessionid', '')
+                    kg_mid = dict(r.cookies).get('kg_mid', '')
+                    cookie_val = token or kg_mid
+                    if cookie_val:
+                        config.cookies.kugou = cookie_val
+                        config.save('./config.yaml')
+                        return {'ok': True, 'token': cookie_val}
+                err = data.get('error_code', '')
+                err_msgs = {20008: '账号格式错误', 20010: '密码错误', 20020: '账号不存在', 20055: '需要验证码'}
+                return {'ok': False, 'error': err_msgs.get(err, f'登录失败(code={err})')}
+            return {'ok': False, 'error': 'API无响应'}
+    except Exception as e:
+        raise HTTPException(500, f'登录异常: {str(e)[:100]}')
+
+
 async def _verify_netease_cookie(cookie: str) -> bool:
     """验证网易云 Cookie：请求用户信息接口"""
     try:

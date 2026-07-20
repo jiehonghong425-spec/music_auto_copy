@@ -235,24 +235,22 @@ tr:hover td{background:rgba(255,255,255,.015)}
   <div class="form-grp"><label>输出目录</label><input id="cfg-output" value="./separated"></div>
   <button class="btn p" onclick="saveSettings()">💾 保存</button>
 
-  <h3>网易云登录</h3>
-  <p style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.8">
-    两种方式任选其一：
-  </p>
+  <h3>账号登录</h3>
   <div class="form-row">
     <div class="form-grp">
-      <label>📱 手机号登录</label>
-      <input id="cfg-163-phone" placeholder="手机号">
+      <label>手机号</label>
+      <input id="cfg-login-phone" placeholder="手机号">
     </div>
     <div class="form-grp">
       <label>密码</label>
-      <input id="cfg-163-pwd" type="password" placeholder="密码" onkeydown="if(event.key==='Enter')login163()">
+      <input id="cfg-login-pwd" type="password" placeholder="密码" onkeydown="if(event.key==='Enter')loginSite('netease')">
     </div>
   </div>
   <div class="actions" style="margin-bottom:16px">
-    <button class="btn p" onclick="login163()">登录网易云</button>
-    <span id="login163-status" style="font-size:13px;margin-left:8px"></span>
-    <span style="font-size:10px;color:var(--muted);margin-left:8px">部分账号可能需要验证码，如果失败请用下面 Cookie 方式</span>
+    <button class="btn p" onclick="loginSite('netease')">网易云登录</button>
+    <button class="btn" onclick="loginSite('qqmusic')">QQ登录</button>
+    <button class="btn" onclick="loginSite('kugou')">酷狗登录</button>
+    <span id="login-status" style="font-size:13px;margin-left:8px"></span>
   </div>
 
   <h3 style="margin-bottom:8px">或手动粘贴 Cookie</h3>
@@ -523,21 +521,23 @@ async function uploadFiles(files){
 async function startSepOne(id){try{await api('POST','/separate',{item_ids:[id]});toast('已开始分离')}catch(e){toast(e.message,'er')}}
 
 // ── Settings ────────────────────────────────
-async function login163(){
-  const phone=document.getElementById('cfg-163-phone').value.trim();
-  const pwd=document.getElementById('cfg-163-pwd').value.trim();
+const LOGIN_NAMES={netease:'网易云',qqmusic:'QQ音乐',kugou:'酷狗'};
+async function loginSite(site){
+  const phone=document.getElementById('cfg-login-phone').value.trim();
+  const pwd=document.getElementById('cfg-login-pwd').value.trim();
   if(!phone||!pwd)return toast('请输入手机号和密码','er');
-  const st=document.getElementById('login163-status');
-  st.innerHTML='<span style="color:var(--yellow)">登录中...</span>';
+  const st=document.getElementById('login-status');
+  st.innerHTML='<span style="color:var(--yellow)">'+LOGIN_NAMES[site]+'登录中...</span>';
   try{
-    const r=await fetch(API+'/login/netease',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:`phone=${encodeURIComponent(phone)}&password=${encodeURIComponent(pwd)}`});
+    const r=await fetch(API+'/login/'+site,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'phone='+encodeURIComponent(phone)+'&password='+encodeURIComponent(pwd)});
     const d=await r.json();
     if(d.ok){
-      st.innerHTML='<span class="tag ok">登录成功</span>';
-      document.getElementById('cfg-cookie-netease').value=d.token||'';
-      toast('网易云登录成功');
+      st.innerHTML='<span class="tag ok">'+LOGIN_NAMES[site]+'登录成功</span>';
+      document.getElementById('cfg-cookie-'+site).value=d.token||'';
+      document.getElementById('cookie-status-'+site).innerHTML='<span class="tag ok">已登录</span>';
+      toast(LOGIN_NAMES[site]+'登录成功');
     }else{
-      st.innerHTML='<span class="tag err">'+d.error+'</span>';
+      st.innerHTML='<span class="tag err">'+LOGIN_NAMES[site]+': '+d.error+'</span>';
     }
   }catch(e){st.innerHTML='<span class="tag err">登录失败</span>'}
 }
