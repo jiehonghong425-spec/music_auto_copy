@@ -245,6 +245,10 @@ input:focus,select:focus{border-color:var(--accent)}
     <div class="form-group"><label>设备</label><select id="cfg-device"><option value="auto">自动检测</option><option value="cpu">CPU</option><option value="cuda">CUDA</option><option value="directml">DirectML</option></select></div>
   </div>
   <div class="form-group"><label>输出目录</label><input id="cfg-output" value="./separated"></div>
+  <h3>VIP Cookie 注入（可选）</h3>
+  <p style="font-size:12px;color:var(--dim);margin-bottom:8px">从浏览器 F12 → Application → Cookies 复制 MUSIC_U / uin 值，填入后可下载完整歌曲</p>
+  <div class="form-group"><label>网易云 MUSIC_U</label><input id="cfg-cookie-netease" placeholder="粘贴 Cookie 值"></div>
+  <div class="form-group"><label>QQ音乐 uin</label><input id="cfg-cookie-qqmusic" placeholder="粘贴 Cookie 值"></div>
   <button class="btn primary" onclick="saveSettings()">💾 保存设置</button>
 </div>
 
@@ -531,6 +535,12 @@ async function saveSettings(){
       device:document.getElementById('cfg-device').value,
       output_dir:document.getElementById('cfg-output').value,
     });
+    // 保存 Cookie
+    await fetch(API+'/cookies',{
+      method:'POST',
+      headers:{'Content-Type':'application/x-www-form-urlencoded'},
+      body:`netease=${encodeURIComponent(document.getElementById('cfg-cookie-netease').value)}&qqmusic=${encodeURIComponent(document.getElementById('cfg-cookie-qqmusic').value)}`
+    });
     toast('设置已保存');
   }catch(e){toast('保存失败: '+e.message,'error')}
 }
@@ -547,6 +557,11 @@ async function loadSettings(){
     document.getElementById('cfg-output').value=c.output_dir||'./separated';
     document.getElementById('sep-model').value=c.model||'htdemucs';
     document.getElementById('sep-jobs').value=c.jobs||4;
+    if(c.cookies){
+      // Cookie 值是脱敏的，需要从配置文件重新加载
+      document.getElementById('cfg-cookie-netease').placeholder=c.cookies.netease?'已设置 ('+c.cookies.netease+')':'粘贴网易云 MUSIC_U';
+      document.getElementById('cfg-cookie-qqmusic').placeholder=c.cookies.qqmusic?'已设置 ('+c.cookies.qqmusic+')':'粘贴 QQ音乐 uin';
+    }
   }catch(e){}
 }
 loadSettings();

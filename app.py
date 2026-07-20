@@ -133,7 +133,20 @@ async def get_config():
         "price_max": config.search.price_max,
         "port": config.server.port,
         "host": config.server.host,
+        "cookies": {
+            "netease": config.cookies.netease[:20] + "..." if len(config.cookies.netease) > 20 else config.cookies.netease,
+            "qqmusic": config.cookies.qqmusic[:20] + "..." if len(config.cookies.qqmusic) > 20 else config.cookies.qqmusic,
+        },
     }
+
+
+@app.post("/api/cookies")
+async def save_cookies(netease: str = "", qqmusic: str = ""):
+    """保存 VIP Cookie"""
+    config.cookies.netease = netease
+    config.cookies.qqmusic = qqmusic
+    config.save("./config.yaml")
+    return {"ok": True}
 
 
 @app.put("/api/config")
@@ -185,9 +198,20 @@ async def search_audio(body: SearchRequest):
 
     # ── 国内音乐站 ──
     if scraper_type in ("netease", "qqmusic", "kugou"):
+        # 读取用户的 Cookie 配置
+        cookies = {}
+        cookie_conf = getattr(config, "cookies", None)
+        if cookie_conf:
+            raw = getattr(cookie_conf, scraper_type, "")
+            if raw:
+                for pair in raw.split(";"):
+                    if "=" in pair:
+                        k, v = pair.strip().split("=", 1)
+                        cookies[k.strip()] = v.strip()
+
         try:
             async with httpx.AsyncClient(timeout=30) as client:
-                scraper = get_scraper(scraper_type, client)
+                scraper = get_scraper(scraper_type, client, cookies if cookies else None)
                 if not scraper:
                     raise HTTPException(400, f"不支持的站点类型: {scraper_type}")
                 items = await asyncio.wait_for(
@@ -274,9 +298,20 @@ async def download_items(body: DownloadRequest):
 
     # ── 国内站下载 ──
     if source in ("netease", "qqmusic", "kugou"):
+        # 读取 Cookie
+        cookies = {}
+        cookie_conf = getattr(config, "cookies", None)
+        if cookie_conf:
+            raw = getattr(cookie_conf, source, "")
+            if raw:
+                for pair in raw.split(";"):
+                    if "=" in pair:
+                        k, v = pair.strip().split("=", 1)
+                        cookies[k.strip()] = v.strip()
+
         downloaded = 0
         async with httpx.AsyncClient(timeout=60) as client:
-            scraper = get_scraper(source, client)
+            scraper = get_scraper(source, client, cookies if cookies else None)
             if not scraper:
                 raise HTTPException(400, f"不支持的站点: {source}")
 

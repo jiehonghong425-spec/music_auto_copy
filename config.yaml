@@ -49,5 +49,11 @@ progress:
   resume: true             # 是否自动断点续传
 
 server:
-  port: 8765               # Web 服务端口
+  port: 8763              # Web 服务端口
   host: 0.0.0.0            # 监听地址
+
+# VIP Cookie 注入（可选，填了可以下载完整歌曲）
+# 从浏览器 F12 → Application → Cookies 复制
+cookies:
+  netease: ""              # 网易云 MUSIC_U cookie
+  qqmusic: ""              # QQ音乐 uin cookie

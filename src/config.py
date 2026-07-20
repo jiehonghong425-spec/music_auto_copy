@@ -75,6 +75,12 @@ class ServerConfig(BaseModel):
     host: str = "0.0.0.0"
 
 
+class CookiesConfig(BaseModel):
+    """VIP Cookie 注入配置"""
+    netease: str = ""
+    qqmusic: str = ""
+
+
 class Config(BaseModel):
     """应用总配置"""
     audiojungle: AudioJungleConfig = Field(default_factory=AudioJungleConfig)
@@ -83,6 +89,7 @@ class Config(BaseModel):
     separation: SeparationConfig = Field(default_factory=SeparationConfig)
     progress: ProgressConfig = Field(default_factory=ProgressConfig)
     server: ServerConfig = Field(default_factory=ServerConfig)
+    cookies: CookiesConfig = Field(default_factory=CookiesConfig)
 
     @classmethod
     def load(cls, path: Path | str = "./config.yaml") -> "Config":
