@@ -160,7 +160,7 @@ tr:hover td{background:rgba(255,255,255,.015)}
   </div>
 
   <!-- 列表区 -->
-  <h3 id="tab-title" style="margin-top:24px">待处理 <button class="btn sm" onclick="loadTabItems()" style="margin-left:8px">🔄</button></h3>
+  <h3 id="tab-title" style="margin-top:24px">待处理</h3>
   <div class="actions" id="tab-actions"></div>
   <div id="tab-list"><div class="empty">加载中...</div></div>
 </div>
@@ -290,7 +290,7 @@ async function api(m,u,b){
 async function refreshDashboard(){
   try{const p=await api('GET','/progress');['pending','downloaded','separated','failed'].forEach(s=>{const e=document.getElementById('s-'+s);if(e)e.textContent=p.stats[s]||0});const t=p.total||1;document.getElementById('p-bar').style.width=(p.completed/t*100)+'%';document.getElementById('p-title').textContent=p.title||'等待任务';document.getElementById('p-count').textContent=p.completed+'/'+p.total;document.getElementById('p-eta').textContent=p.eta_seconds?`剩余 ~${Math.round(p.eta_seconds/60)}min`:'';document.getElementById('p-status').innerHTML=p.running?'🟢 运行中':'⚪ 空闲'}catch(e){}
 }
-setInterval(refreshDashboard,3000);refreshDashboard();
+refreshDashboard();
 
 // SSE — 容错重连
 let evt=null;
@@ -416,15 +416,7 @@ async function downloadSingle(id){
   try{await api('POST','/download',{item_ids:[id]});toast('已下载');loadTabItems()}catch(e){toast(e.message,'er')}
 }
 
-// 每 3 秒只更新统计数字，不重新加载列表
-const _origRefresh=refreshDashboard;
-refreshDashboard=function(){
-  api('GET','/stats').then(s=>{
-    ['pending','downloaded','separated','failed'].forEach(k=>{
-      const el=document.getElementById('s-'+k);if(el)el.textContent=s[k]||0;
-    });
-  }).catch(()=>{});
-};
+// SSE 已负责更新统计数字，无需定时轮询
 
 // ── Sites & Search ──────────────────────────
 let searchResults=[],currentSiteType='audiojungle';
