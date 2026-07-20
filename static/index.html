@@ -422,13 +422,18 @@ async function downloadSingle(id){
 let searchResults=[],currentSiteType='audiojungle';
 
 async function loadSites(){
-  try{const sites=await api('GET','/sites');const tb=document.getElementById('sites-tbody'),sel=document.getElementById('search-site');tb.innerHTML='';sel.innerHTML='';
-  sites.forEach(s=>{
-    const on=s.online!==false;
-    tb.innerHTML+=`<tr><td>${s.name}</td><td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${s.url}</td><td><span class="tag info">${s.scraper_type}</span></td><td><span class="tag ${on?'ok':'err'}">${on?'🟢 在线':'🔴 离线'}</span></td><td><button class="btn sm d" onclick="deleteSite(${s.id})">删除</button></td></tr>`;
-    sel.innerHTML+=`<option value="${s.id}" data-type="${s.scraper_type}">${s.name}</option>`;
-  });
-  onSiteChange()}catch(e){}
+  try{
+    const tb=document.getElementById('sites-tbody'),sel=document.getElementById('search-site');
+    tb.innerHTML='<tr><td colspan="5">加载中...</td></tr>';
+    const sites=await api('GET','/sites');
+    tb.innerHTML='';sel.innerHTML='';
+    sites.forEach(s=>{
+      const on=s.online!==false;
+      tb.innerHTML+=`<tr><td>${s.name}</td><td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${s.url}</td><td><span class="tag info">${s.scraper_type}</span></td><td><span class="tag ${on?'ok':'err'}">${on?'ON':'OFF'}</span></td><td><button class="btn sm d" onclick="deleteSite(${s.id})">删除</button></td></tr>`;
+      sel.innerHTML+=`<option value="${s.id}" data-type="${s.scraper_type}">${s.name}</option>`;
+    });
+    onSiteChange();
+  }catch(e){}
 }
 async function refreshSites(){
   try{await api('POST','/sites/refresh');loadSites();toast('状态已刷新')}catch(e){toast(e.message,'er')}

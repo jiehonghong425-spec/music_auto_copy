@@ -189,27 +189,26 @@ async def update_config(body: ConfigUpdate):
 @app.get("/api/sites")
 async def list_sites():
     sites = db.list_sites()
-    # 快速检测连接状态（带缓存，30秒内不重复检测）
-    for s in sites:
-        s["online"] = await _check_site_alive(s["url"])
+    # 并行检测所有站点连接状态（有缓存时不发起新请求）
+    checks = await asyncio.gather(*[_check_site_alive(s["url"]) for s in sites])
+    for s, online in zip(sites, checks):
+        s["online"] = online
     return sites
 
 
 _SITE_CACHE: dict[str, tuple[float, bool]] = {}
 
 async def _check_site_alive(url: str) -> bool:
-    """检测站点是否可达（30秒缓存）"""
+    """检测站点是否可达（60秒缓存，超时3秒）"""
     now = time.time()
     if url in _SITE_CACHE:
         t, result = _SITE_CACHE[url]
-        if now - t < 30:
+        if now - t < 60:
             return result
     try:
-        r = await asyncio.wait_for(
-            httpx.AsyncClient(timeout=5).head(url, headers={"User-Agent": "Mozilla/5.0"}),
-            timeout=5,
-        )
-        result = r.status_code < 500
+        async with httpx.AsyncClient(timeout=3) as cli:
+            r = await cli.head(url, headers={"User-Agent": "Mozilla/5.0"})
+            result = r.status_code < 500
     except Exception:
         result = False
     _SITE_CACHE[url] = (now, result)

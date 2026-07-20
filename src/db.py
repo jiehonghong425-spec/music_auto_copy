@@ -75,6 +75,10 @@ class Database:
 
     def _init_schema(self):
         self.conn.executescript(SCHEMA)
+        # 加速查询的索引
+        self.conn.execute("CREATE INDEX IF NOT EXISTS idx_items_status ON items(status)")
+        self.conn.execute("CREATE INDEX IF NOT EXISTS idx_items_title ON items(title)")
+        self.conn.execute("CREATE INDEX IF NOT EXISTS idx_uploaded_status ON uploaded_files(status)")
         self.conn.commit()
 
     def close(self):
