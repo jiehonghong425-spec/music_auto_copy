@@ -11,6 +11,7 @@ import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
+from urllib.parse import quote
 
 # 修复 Windows 编码
 os.environ.setdefault("PYTHONIOENCODING", "utf-8")
@@ -599,18 +600,30 @@ async def copy_file(item_id: int, stem: str = "instrumental"):
 
 @app.get("/api/files/{item_id}/download")
 async def download_file(item_id: int, stem: str = "instrumental"):
-    """直接下载 WAV 文件"""
+    """直接下载音频文件"""
     item = db.get_item(item_id)
     if not item:
         raise HTTPException(404, "文件不存在")
 
-    path_key = "instrumental_path" if stem == "instrumental" else "vocals_path"
+    path_map = {
+        "instrumental": "instrumental_path",
+        "vocals": "vocals_path",
+        "download": "download_path",
+    }
+    path_key = path_map.get(stem, "instrumental_path")
     file_path = item.get(path_key, "")
     if not file_path or not Path(file_path).exists():
         raise HTTPException(404, f"文件不存在: {stem}")
 
-    filename = f"{item['title']}_{stem}.wav"
-    return FileResponse(str(file_path), filename=filename, media_type="audio/wav")
+    # 安全文件名
+    safe_title = "".join(c for c in (item.get("title") or "audio") if c.isalnum() or c in " _-.")[:40]
+    p = Path(file_path)
+    filename = f"{safe_title}_{stem}{p.suffix}"
+    return FileResponse(
+        str(file_path),
+        filename=quote(filename, safe=" _-."),
+        media_type="audio/wav" if p.suffix.lower() == ".wav" else "audio/mpeg",
+    )
 
 
 # ── 音频搜索 ──────────────────────────────────────────────
