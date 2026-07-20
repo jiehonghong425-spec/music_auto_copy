@@ -1,28 +1,22 @@
-# AudioJungle 预览音频批量下载 + 人声分离 配置文件
-# 修改此文件后无需重启，每次运行自动加载
-
 audiojungle:
-  api_strategy: edge       # edge(无需认证) | scrape(浏览器抓取) | official(需API Token)
-  api_token: null          # 仅在 official 策略时需要
-  proxy: null              # 代理地址, 如 http://127.0.0.1:7890
-  page_delay: 1.0          # 翻页间隔(秒), 避免被限流
-
+  api_strategy: edge
+  page_delay: 1.0
 search:
   category: music
-  sort: date               # date | sales | rating | price
-  date: this-year          # all | today | this-week | this-month | this-year
-  price_min: null          # 最低价(美元), null 表示不限
-  price_max: 19            # 最高价(美元)
-  tags: []                 # 标签过滤, 如 ["corporate", "inspiring"]
-  max_pages: 0             # 最大翻页数, 0=不限制
-  max_items: 0             # 最大下载数, 0=不限制
-
+  sort: date
+  date: this-year
+  price_max: 19
+  tags: []
+  max_pages: 0
+  max_items: 0
 download:
-  concurrency: 5           # 并发下载数
-  output_dir: ./downloads/previews
-  overwrite: false         # 是否覆盖已下载文件
-  max_retries: 3           # 下载失败最大重试次数
-  retry_delay: 5.0         # 重试间隔基础秒数
+  concurrency: 5
+  output_dir: !!python/object/apply:pathlib.WindowsPath
+  - ./downloads/previews
+  overwrite: false
+  verify_hash: true
+  max_retries: 3
+  retry_delay: 5.0
   presets:
     small:
       max_items: 20
@@ -33,28 +27,25 @@ download:
     large:
       max_items: 500
       concurrency: 8
-
 separation:
-  engine: local            # local(本地Demucs模型)
+  engine: local
   local:
-    model: htdemucs       # htdemucs(快,2子模型) | htdemucs_ft(慢,4子模型)
-    device: auto           # auto(自动检测) | cpu | cuda | directml
-    two_stems: true        # true=仅人声+伴奏 false=全部分离(鼓/贝斯/其他)
-    jobs: 4                # 并行线程数 (1-8)，CPU 推荐 4
-    model_dir: ./models    # 模型缓存目录
-    output_dir: ./separated  # 分离结果输出目录
-
+    model: htdemucs
+    device: auto
+    two_stems: true
+    jobs: 4
+    model_dir: !!python/object/apply:pathlib.WindowsPath
+    - ./models
+    output_dir: !!python/object/apply:pathlib.WindowsPath
+    - separated
 progress:
-  db_path: ./progress.db   # SQLite 进度数据库
-  resume: true             # 是否自动断点续传
-
+  db_path: !!python/object/apply:pathlib.WindowsPath
+  - ./progress.db
+  resume: true
 server:
-  port: 8763              # Web 服务端口
-  host: 0.0.0.0            # 监听地址
-
-# VIP Cookie 注入（可选，填了可以下载完整歌曲）
-# 从浏览器 F12 → Application → Cookies 复制
+  port: 8763
+  host: 0.0.0.0
 cookies:
-  netease: ""              # 网易云 MUSIC_U cookie
-  qqmusic: ""              # QQ音乐 uin cookie
-  kugou: ""                # 酷狗 kg_mid cookie
+  netease: ''
+  qqmusic: ''
+  kugou: ''

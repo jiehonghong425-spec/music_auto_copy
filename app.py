@@ -260,15 +260,21 @@ async def search_audio(body: SearchRequest):
     # ── 国内音乐站 ──
     if scraper_type in ("netease", "qqmusic", "kugou"):
         # 读取用户的 Cookie 配置
+        default_keys = {"netease": "MUSIC_U", "qqmusic": "uin", "kugou": "kg_mid"}
         cookies = {}
         cookie_conf = getattr(config, "cookies", None)
         if cookie_conf:
             raw = getattr(cookie_conf, scraper_type, "")
             if raw:
-                for pair in raw.split(";"):
-                    if "=" in pair:
-                        k, v = pair.strip().split("=", 1)
-                        cookies[k.strip()] = v.strip()
+                if "=" in raw:
+                    # key=value 格式
+                    for pair in raw.split(";"):
+                        if "=" in pair:
+                            k, v = pair.strip().split("=", 1)
+                            cookies[k.strip()] = v.strip()
+                else:
+                    # 直接粘贴的值，用默认 key
+                    cookies[default_keys.get(scraper_type, "token")] = raw.strip()
 
         try:
             async with httpx.AsyncClient(timeout=30) as client:
@@ -415,15 +421,19 @@ async def download_items(body: DownloadRequest):
     # ── 国内站下载 ──
     if source in ("netease", "qqmusic", "kugou"):
         # 读取 Cookie
+        default_keys = {"netease": "MUSIC_U", "qqmusic": "uin", "kugou": "kg_mid"}
         cookies = {}
         cookie_conf = getattr(config, "cookies", None)
         if cookie_conf:
             raw = getattr(cookie_conf, source, "")
             if raw:
-                for pair in raw.split(";"):
-                    if "=" in pair:
-                        k, v = pair.strip().split("=", 1)
-                        cookies[k.strip()] = v.strip()
+                if "=" in raw:
+                    for pair in raw.split(";"):
+                        if "=" in pair:
+                            k, v = pair.strip().split("=", 1)
+                            cookies[k.strip()] = v.strip()
+                else:
+                    cookies[default_keys.get(source, "token")] = raw.strip()
 
         downloaded = 0
         async with httpx.AsyncClient(timeout=60) as client:
