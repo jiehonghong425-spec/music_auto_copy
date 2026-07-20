@@ -235,11 +235,15 @@ tr:hover td{background:rgba(255,255,255,.015)}
   <button class="btn p" onclick="saveSettings()">💾 保存</button>
 
   <h3>VIP Cookie（可选，填后可下载完整歌曲）</h3>
-  <p style="font-size:11px;color:var(--muted);margin-bottom:12px">浏览器 F12 → Application → Cookies，复制对应值</p>
+  <div class="form-grp" style="margin-bottom:12px">
+    <label>一键粘贴完整 Cookie（推荐）</label>
+    <input id="cfg-cookie-raw" placeholder="浏览器打开 music.163.com → F12 → Network → 任意请求 → Request Headers → 复制 Cookie: 后面一整行贴到这里" style="font-family:monospace;font-size:12px">
+    <p style="font-size:10px;color:var(--muted);margin-top:4px">自动识别 MUSIC_U / uin / kg_mid，无需手动找</p>
+  </div>
   <div class="form-row">
-    <div class="form-grp"><label>网易云 MUSIC_U</label><input id="cfg-cookie-netease" placeholder="粘贴 Cookie"></div>
-    <div class="form-grp"><label>QQ音乐 uin</label><input id="cfg-cookie-qqmusic" placeholder="粘贴 Cookie"></div>
-    <div class="form-grp"><label>酷狗 kg_mid</label><input id="cfg-cookie-kugou" placeholder="粘贴 Cookie"></div>
+    <div class="form-grp"><label>网易云 MUSIC_U（自动解析）</label><input id="cfg-cookie-netease" placeholder="自动从上面解析"></div>
+    <div class="form-grp"><label>QQ音乐 uin（自动解析）</label><input id="cfg-cookie-qqmusic" placeholder="自动从上面解析"></div>
+    <div class="form-grp"><label>酷狗 kg_mid（自动解析）</label><input id="cfg-cookie-kugou" placeholder="自动从上面解析"></div>
   </div>
   <button class="btn p" onclick="saveSettings()">💾 保存 Cookie</button>
 </div>
@@ -474,8 +478,16 @@ async function startSepOne(id){try{await api('POST','/separate',{item_ids:[id]})
 // ── Settings ────────────────────────────────
 async function saveSettings(){
   try{await api('PUT','/config',{model:document.getElementById('cfg-model').value,jobs:parseInt(document.getElementById('cfg-jobs').value),concurrency:parseInt(document.getElementById('cfg-concurrency').value),device:document.getElementById('cfg-device').value,output_dir:document.getElementById('cfg-output').value});
-  await fetch(API+'/cookies',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:`netease=${encodeURIComponent(document.getElementById('cfg-cookie-netease').value)}&qqmusic=${encodeURIComponent(document.getElementById('cfg-cookie-qqmusic').value)}&kugou=${encodeURIComponent(document.getElementById('cfg-cookie-kugou').value)}`});
-  toast('已保存')}catch(e){toast(e.message,'er')}
+  const raw=document.getElementById('cfg-cookie-raw').value;
+  const body=raw
+    ?`raw=${encodeURIComponent(raw)}`
+    :`netease=${encodeURIComponent(document.getElementById('cfg-cookie-netease').value)}&qqmusic=${encodeURIComponent(document.getElementById('cfg-cookie-qqmusic').value)}&kugou=${encodeURIComponent(document.getElementById('cfg-cookie-kugou').value)}`;
+  const r=await fetch(API+'/cookies',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body});
+  const d=await r.json();
+  if(d.parsed){
+    let msg=[]; if(d.parsed.netease)msg.push('网易云'); if(d.parsed.qqmusic)msg.push('QQ'); if(d.parsed.kugou)msg.push('酷狗');
+    toast('已识别: '+msg.join('+'));
+  }else{toast('已保存')}
 }
 async function loadSettings(){
   try{const c=await api('GET','/config');

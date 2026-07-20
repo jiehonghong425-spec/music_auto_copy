@@ -143,13 +143,35 @@ async def get_config():
 
 
 @app.post("/api/cookies")
-async def save_cookies(netease: str = "", qqmusic: str = "", kugou: str = ""):
-    """保存 VIP Cookie"""
-    config.cookies.netease = netease
-    config.cookies.qqmusic = qqmusic
-    config.cookies.kugou = kugou
+async def save_cookies(netease: str = "", qqmusic: str = "", kugou: str = "", raw: str = ""):
+    """保存 VIP Cookie — 支持粘贴完整 Cookie 字符串自动解析"""
+    # 如果粘贴了原始 Cookie 字符串，自动解析
+    if raw and not netease:
+        pairs = {}
+        for part in raw.replace("\n", "").replace("\r", "").split(";"):
+            part = part.strip()
+            if "=" in part:
+                k, v = part.split("=", 1)
+                pairs[k.strip()] = v.strip()
+        # 网易云: MUSIC_U
+        if "MUSIC_U" in pairs:
+            netease = pairs["MUSIC_U"]
+        # QQ音乐: uin 或 qqmusic_key
+        if "uin" in pairs:
+            qqmusic = pairs["uin"]
+        elif "qqmusic_key" in pairs:
+            qqmusic = pairs["qqmusic_key"]
+        # 酷狗: kg_mid 或 kg_mid_v2
+        if "kg_mid" in pairs:
+            kugou = pairs["kg_mid"]
+        elif "kg_mid_v2" in pairs:
+            kugou = pairs["kg_mid_v2"]
+
+    if netease: config.cookies.netease = netease
+    if qqmusic: config.cookies.qqmusic = qqmusic
+    if kugou: config.cookies.kugou = kugou
     config.save("./config.yaml")
-    return {"ok": True}
+    return {"ok": True, "parsed": {"netease": bool(netease), "qqmusic": bool(qqmusic), "kugou": bool(kugou)}}
 
 
 @app.put("/api/config")
