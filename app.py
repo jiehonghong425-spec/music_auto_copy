@@ -224,17 +224,7 @@ async def search_audio(body: SearchRequest):
         except Exception as e:
             raise HTTPException(502, f"搜索失败: {str(e)[:200]}")
 
-        for item in items:
-            sid = item["id"]
-            # 字符串 ID 用 hash 映射成整数
-            if isinstance(sid, str):
-                sid = abs(hash(sid)) % (10 ** 9)
-            db.conn.execute(
-                """INSERT OR IGNORE INTO items (id, title, author, preview_url, status, category, tags)
-                   VALUES (?, ?, ?, ?, 'pending', ?, ?)""",
-                (sid, item["title"], item["author"], item["preview_url"], scraper_type, json.dumps({"source": scraper_type, "source_id": item["id"]})),
-            )
-            db.conn.commit()
+        # 不自动入库，返回结果让用户选择加入待处理队列
         return {"items": items, "count": len(items)}
 
     # ── AudioJungle ──
@@ -266,6 +256,54 @@ async def search_audio(body: SearchRequest):
             "tags": [],
         })
     return {"items": items, "count": len(items)}
+
+
+# ── 待处理队列 ──────────────────────────────────────────
+
+class QueueAddRequest(BaseModel):
+    items: list[dict] = []  # [{id, title, author, preview_url, source, ...}]
+
+
+@app.get("/api/queue")
+async def get_queue():
+    """获取待处理队列"""
+    items = db.get_items_by_status("pending")
+    return {"items": items, "count": len(items)}
+
+
+@app.post("/api/queue/add")
+async def add_to_queue(body: QueueAddRequest):
+    """添加项目到待处理队列"""
+    added = 0
+    for item in body.items:
+        sid = item.get("id", "")
+        # 字符串 ID 映射成整数
+        if isinstance(sid, str):
+            sid = abs(hash(str(sid))) % (10 ** 9)
+        source = item.get("source", "")
+        source_id = item.get("source_id", item.get("id", ""))
+        try:
+            db.conn.execute(
+                """INSERT OR IGNORE INTO items (id, title, author, preview_url, status, category, tags)
+                   VALUES (?, ?, ?, ?, 'pending', ?, ?)""",
+                (sid, item.get("title", ""), item.get("author", ""),
+                 item.get("preview_url", ""), source,
+                 json.dumps({"source": source, "source_id": source_id})),
+            )
+            if db.conn.total_changes > 0:
+                added += 1
+        except Exception:
+            pass
+    db.conn.commit()
+    return {"ok": True, "added": added}
+
+
+@app.delete("/api/queue/{item_id}")
+async def remove_from_queue(item_id: int):
+    """从队列中移除项目"""
+    db.conn.execute("DELETE FROM items WHERE id = ? AND status = 'pending'", (item_id,))
+    db.conn.commit()
+    return {"ok": True}
 
 
 # ── 下载 ──────────────────────────────────────────────────

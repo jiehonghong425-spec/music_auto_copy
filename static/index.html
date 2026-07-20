@@ -143,6 +143,15 @@ input:focus,select:focus{border-color:var(--accent)}
     </div>
   </div>
 
+  <h3>待处理队列 <span id="q-count" style="color:var(--dim);font-size:13px"></span></h3>
+  <div id="queue-list" style="margin-bottom:16px"><p style="color:var(--dim);font-size:13px">加载中...</p></div>
+  <div class="btn-row">
+    <button class="btn primary" onclick="downloadQueue()">📥 下载队列</button>
+    <button class="btn primary" onclick="startSeparation()">🎵 全部分离</button>
+    <button class="btn danger" onclick="clearQueue()">清空队列</button>
+  </div>
+
+  <h3 style="margin-top:24px">分离控制</h3>
   <div class="btn-row">
     <button class="btn primary" onclick="startSeparation()">▶ 开始分离</button>
     <button class="btn danger" onclick="stopSeparation()">⏹ 停止</button>
@@ -184,7 +193,7 @@ input:focus,select:focus{border-color:var(--accent)}
   </div>
   <div class="btn-row">
     <button class="btn primary" onclick="searchAudio()">🔍 搜索</button>
-    <button class="btn" onclick="downloadAllResults()">📥 下载全部结果</button>
+    <button class="btn" onclick="addAllToQueue()">+ 全部加入待处理</button>
   </div>
   <div id="search-results"></div>
 </div>
@@ -275,8 +284,8 @@ function navTo(page){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('nav a').forEach(a=>a.classList.remove('active'));
   document.getElementById('page-'+page).classList.add('active');
-  document.querySelector(`[data-page="${page}"]`).classList.add('active');
-  if(page==='dashboard') refreshDashboard();
+  document.querySelector('[data-page="'+page+'"]').classList.add('active');
+  if(page==='dashboard'){refreshDashboard();loadQueue();}
   if(page==='sources') loadSites();
   if(page==='files') loadFiles();
 }
@@ -375,6 +384,14 @@ async function deleteSite(id){
 let searchResults=[];
 let currentSiteType='audiojungle';
 
+async function addAllToQueue(){
+  if(!searchResults.length) return toast('请先搜索','error');
+  const items=searchResults.map(i=>({id:i.id,title:i.title,author:i.author||'',preview_url:i.preview_url||'',source:i.source||'',source_id:i.id}));
+  const r=await api('POST','/queue/add',{items});
+  toast('已加入 '+r.added+' 首到待处理队列');
+  loadQueue();
+}
+
 async function loadSites(){
   try{
     const sites=await api('GET','/sites');
@@ -427,7 +444,7 @@ async function searchAudio(){
       const canDl=item.can_download!==false;
       const dur=item.duration?(' · '+item.duration+'s'):'';
       const dlBtn=canDl
-        ?`<button class="btn sm primary" onclick="downloadSingle(${item.id})">下载</button>`
+        ?`<button class="btn sm primary" onclick="addToQueue('${item.id}','${item.title.replace(/'/g,"\\'")}','${(item.author||'').replace(/'/g,"\\'")}','${item.preview_url||''}','${item.source||''}')">+ 加入待处理</button>`
         :`<button class="btn sm" disabled style="opacity:0.4" title="需要VIP Cookie">🔒 需VIP</button>`;
       div.innerHTML+='<div class="search-result"><div class="info"><div class="title">'+item.title+' <span style="font-size:11px;color:'+(canDl?'var(--green)':'var(--yellow)')+'">'+item.dl_note+'</span></div><div class="meta">'+(item.author||'')+' · '+(item.source||'')+' · '+(item.album||'')+dur+'</div></div><div class="actions">'+dlBtn+'</div></div>';
     });
@@ -439,6 +456,52 @@ function downloadAllResults(){
   const ids=searchResults.map(i=>i.id);
   api('POST','/download',{item_ids:ids}).then(r=>toast(`已下载 ${r.downloaded} 首`)).catch(e=>toast('下载失败: '+e.message,'error'));
 }
+// ── Queue ─────────────────────────────────────────────
+async function loadQueue(){
+  try{
+    const r=await api('GET','/queue');
+    const div=document.getElementById('queue-list');
+    document.getElementById('q-count').textContent=`(${r.count} 首)`;
+    if(!r.count){div.innerHTML='<p style="color:var(--dim);font-size:13px">队列为空，去"音频源"搜索并添加</p>';return}
+    div.innerHTML=r.items.map(i=>{
+      const src=i.tags||'';
+      let srcName='';
+      try{srcName=JSON.parse(src).source||''}catch(e){}
+      return`<div class="search-result"><div class="info"><div class="title">${i.title}</div><div class="meta">${i.author||''} · ${srcName}</div></div><div class="actions"><button class="btn sm danger" onclick="removeFromQueue(${i.id})">移除</button></div></div>`;
+    }).join('');
+  }catch(e){}
+}
+
+async function addToQueue(id,title,author,preview_url,source){
+  try{
+    const r=await api('POST','/queue/add',{items:[{id,title,author,preview_url,source,source_id:id}]});
+    toast(`已加入队列 (+${r.added})`);
+    loadQueue();
+  }catch(e){toast('添加失败: '+e.message,'error')}
+}
+
+async function removeFromQueue(id){
+  try{await api('DELETE','/queue/'+id);toast('已移除');loadQueue()}
+  catch(e){toast('移除失败','error')}
+}
+
+async function downloadQueue(){
+  try{
+    const q=await api('GET','/queue');
+    if(!q.count)return toast('队列为空','error');
+    const ids=q.items.map(i=>i.id);
+    const r=await api('POST','/download',{item_ids:ids});
+    toast(`已下载 ${r.downloaded} 首`); loadQueue(); loadFiles();
+  }catch(e){toast('下载失败: '+e.message,'error')}
+}
+
+async function clearQueue(){
+  if(!confirm('确定清空待处理队列？'))return;
+  const q=await api('GET','/queue');
+  for(const i of q.items) await api('DELETE','/queue/'+i.id).catch(()=>{});
+  toast('队列已清空'); loadQueue();
+}
+
 async function downloadSingle(id){
   try{await api('POST','/download',{item_ids:[id]});toast('下载完成，刷新文件列表查看');loadFiles()}
   catch(e){toast('下载失败: '+e.message,'error')}
