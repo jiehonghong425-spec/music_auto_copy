@@ -57,3 +57,4 @@ server:
 cookies:
   netease: ""              # 网易云 MUSIC_U cookie
   qqmusic: ""              # QQ音乐 uin cookie
+  kugou: ""                # 酷狗 kg_mid cookie

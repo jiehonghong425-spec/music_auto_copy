@@ -79,6 +79,7 @@ class CookiesConfig(BaseModel):
     """VIP Cookie 注入配置"""
     netease: str = ""
     qqmusic: str = ""
+    kugou: str = ""
 
 
 class Config(BaseModel):

@@ -136,15 +136,17 @@ async def get_config():
         "cookies": {
             "netease": config.cookies.netease[:20] + "..." if len(config.cookies.netease) > 20 else config.cookies.netease,
             "qqmusic": config.cookies.qqmusic[:20] + "..." if len(config.cookies.qqmusic) > 20 else config.cookies.qqmusic,
+            "kugou": config.cookies.kugou[:20] + "..." if len(config.cookies.kugou) > 20 else config.cookies.kugou,
         },
     }
 
 
 @app.post("/api/cookies")
-async def save_cookies(netease: str = "", qqmusic: str = ""):
+async def save_cookies(netease: str = "", qqmusic: str = "", kugou: str = ""):
     """保存 VIP Cookie"""
     config.cookies.netease = netease
     config.cookies.qqmusic = qqmusic
+    config.cookies.kugou = kugou
     config.save("./config.yaml")
     return {"ok": True}
 

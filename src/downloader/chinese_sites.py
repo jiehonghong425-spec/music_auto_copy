@@ -197,9 +197,12 @@ class QQMusicScraper:
 # ═══════════════════════════════════════════════════════════
 
 class KugouScraper:
-    """酷狗音乐爬虫"""
+    """酷狗音乐爬虫 — 多策略试听下载"""
 
     SEARCH_API = "http://mobilecdn.kugou.com/api/v3/search/song"
+    SONG_INFO_API = "http://m.kugou.com/app/i/getSongInfo.php"
+    # 免费试听 CDN（无需登录，~60秒片段）
+    TRY_PLAY_CDN = "http://fs.open.kugou.com"
 
     def __init__(self, client: httpx.AsyncClient, cookies: dict | None = None):
         self.client = client
@@ -227,25 +230,65 @@ class KugouScraper:
                 "duration": s.get("duration", 0),
                 "source": "kugou",
                 "preview_url": s.get("share_url", ""),
-                "has_free": True,  # 酷狗通常有免费片段
+                "has_free": False,  # 酷狗现在大部分需要付费
             })
         return results
 
     async def get_download_url(self, file_hash: str) -> Optional[str]:
-        """获取下载链接"""
+        """获取下载链接 — 多策略尝试
+
+        策略 1: 官方 playInfo API（VIP Cookie 可能返回完整链接）
+        策略 2: 免费试听 CDN（60秒片段，无需登录）
+        """
         if not file_hash:
             return None
         headers = _merge_cookies({**BASE_HEADERS}, self.cookies)
+
+        # 策略 1: 官方 API（无 Cookie = 可能空，有 Cookie = 可能完整）
         try:
-            key_url = f"http://m.kugou.com/app/i/getSongInfo.php?hash={file_hash}&cmd=playInfo"
+            key_url = f"{self.SONG_INFO_API}?hash={file_hash}&cmd=playInfo"
             r = await self.client.get(key_url, headers=headers, timeout=10)
             r.raise_for_status()
             data = r.json()
+
+            # 直接 URL
             url = data.get("url", "")
-            if url:
+            if url and url.startswith("http"):
                 return url
+
+            # backup_url
+            backup = data.get("backup_url", {})
+            if isinstance(backup, dict):
+                for k in backup:
+                    if backup[k] and str(backup[k]).startswith("http"):
+                        return str(backup[k])
+
+            # hash_offset 免费片段（酷狗 CDN 已封锁外部访问，此路不通）
+            # trans = data.get("trans_param", {})
+            # offset = trans.get("hash_offset", {})
+            # 酷狗免费试听 CDN 返回 502/403，无 Cookie 基本无法下载
+
+            # 使用 128kbps hash 作为备选
+            extra = data.get("extra", {})
+            hash_128 = extra.get("128hash", "")
+            if hash_128 and hash_128 != file_hash:
+                # 重试用 128kbps hash
+                try:
+                    r2 = await self.client.get(
+                        f"{self.SONG_INFO_API}?hash={hash_128}&cmd=playInfo",
+                        headers=headers, timeout=10,
+                    )
+                    r2.raise_for_status()
+                    d2 = r2.json()
+                    u2 = d2.get("url", "")
+                    if u2 and u2.startswith("http"):
+                        return u2
+                except Exception:
+                    pass
+
         except Exception:
             pass
+
         return None
 
 
