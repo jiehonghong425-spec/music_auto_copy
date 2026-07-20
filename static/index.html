@@ -193,8 +193,9 @@ tr:hover td{background:rgba(255,255,255,.015)}
   <h3>站点管理</h3>
   <div class="actions">
     <button class="btn" onclick="showAddSite()">+ 添加站点</button>
+    <button class="btn" onclick="refreshSites()">🔄 刷新状态</button>
   </div>
-  <div class="table-wrap"><table><thead><tr><th>名称</th><th>URL</th><th>类型</th><th>操作</th></tr></thead><tbody id="sites-tbody"></tbody></table></div>
+  <div class="table-wrap"><table><thead><tr><th>名称</th><th>URL</th><th>类型</th><th>连接</th><th>操作</th></tr></thead><tbody id="sites-tbody"></tbody></table></div>
 </div>
 
 <!-- ═══════════════ FILES ═══════════════ -->
@@ -413,8 +414,15 @@ let searchResults=[],currentSiteType='audiojungle';
 
 async function loadSites(){
   try{const sites=await api('GET','/sites');const tb=document.getElementById('sites-tbody'),sel=document.getElementById('search-site');tb.innerHTML='';sel.innerHTML='';
-  sites.forEach(s=>{tb.innerHTML+=`<tr><td>${s.name}</td><td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${s.url}</td><td><span class="tag info">${s.scraper_type}</span></td><td><button class="btn sm d" onclick="deleteSite(${s.id})">删除</button></td></tr>`;sel.innerHTML+=`<option value="${s.id}" data-type="${s.scraper_type}">${s.name}</option>`});
+  sites.forEach(s=>{
+    const on=s.online!==false;
+    tb.innerHTML+=`<tr><td>${s.name}</td><td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${s.url}</td><td><span class="tag info">${s.scraper_type}</span></td><td><span class="tag ${on?'ok':'err'}">${on?'🟢 在线':'🔴 离线'}</span></td><td><button class="btn sm d" onclick="deleteSite(${s.id})">删除</button></td></tr>`;
+    sel.innerHTML+=`<option value="${s.id}" data-type="${s.scraper_type}">${s.name}</option>`;
+  });
   onSiteChange()}catch(e){}
+}
+async function refreshSites(){
+  try{await api('POST','/sites/refresh');loadSites();toast('状态已刷新')}catch(e){toast(e.message,'er')}
 }
 function onSiteChange(){
   const s=document.getElementById('search-site'),o=s.options[s.selectedIndex];currentSiteType=o?.dataset?.type||'audiojungle';

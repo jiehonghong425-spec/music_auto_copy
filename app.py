@@ -188,7 +188,44 @@ async def update_config(body: ConfigUpdate):
 
 @app.get("/api/sites")
 async def list_sites():
-    return db.list_sites()
+    sites = db.list_sites()
+    # 快速检测连接状态（带缓存，30秒内不重复检测）
+    for s in sites:
+        s["online"] = await _check_site_alive(s["url"])
+    return sites
+
+
+_SITE_CACHE: dict[str, tuple[float, bool]] = {}
+
+async def _check_site_alive(url: str) -> bool:
+    """检测站点是否可达（30秒缓存）"""
+    now = time.time()
+    if url in _SITE_CACHE:
+        t, result = _SITE_CACHE[url]
+        if now - t < 30:
+            return result
+    try:
+        r = await asyncio.wait_for(
+            httpx.AsyncClient(timeout=5).head(url, headers={"User-Agent": "Mozilla/5.0"}),
+            timeout=5,
+        )
+        result = r.status_code < 500
+    except Exception:
+        result = False
+    _SITE_CACHE[url] = (now, result)
+    return result
+
+
+@app.post("/api/sites/refresh")
+async def refresh_sites():
+    """强制刷新所有站点连接状态"""
+    global _SITE_CACHE
+    _SITE_CACHE = {}
+    sites = db.list_sites()
+    results = {}
+    for s in sites:
+        results[s["name"]] = await _check_site_alive(s["url"])
+    return {"status": results}
 
 
 @app.post("/api/sites")
