@@ -11,22 +11,10 @@ search:
   max_items: 0
 download:
   concurrency: 5
-  output_dir: !!python/object/apply:pathlib.WindowsPath
-  - ./downloads/previews
+  output_dir: ./downloads/previews
   overwrite: false
-  verify_hash: true
   max_retries: 3
   retry_delay: 5.0
-  presets:
-    small:
-      max_items: 20
-      concurrency: 3
-    medium:
-      max_items: 100
-      concurrency: 5
-    large:
-      max_items: 500
-      concurrency: 8
 separation:
   engine: local
   local:
@@ -34,13 +22,10 @@ separation:
     device: auto
     two_stems: true
     jobs: 4
-    model_dir: !!python/object/apply:pathlib.WindowsPath
-    - ./models
-    output_dir: !!python/object/apply:pathlib.WindowsPath
-    - separated
+    model_dir: ./models
+    output_dir: ./separated
 progress:
-  db_path: !!python/object/apply:pathlib.WindowsPath
-  - ./progress.db
+  db_path: ./progress.db
   resume: true
 server:
   port: 8763

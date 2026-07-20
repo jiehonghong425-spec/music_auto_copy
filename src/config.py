@@ -105,15 +105,18 @@ class Config(BaseModel):
 
     def save(self, path: Path | str = "./config.yaml") -> None:
         """保存配置到 YAML 文件"""
+        def _convert(v):
+            if isinstance(v, Path):
+                return str(v)
+            if isinstance(v, dict):
+                return {k: _convert(v2) for k, v2 in v.items()}
+            if isinstance(v, list):
+                return [_convert(v2) for v2 in v]
+            return v
+        data = _convert(self.model_dump(exclude_none=True))
         path = Path(path)
         with open(path, "w", encoding="utf-8") as f:
-            yaml.dump(
-                self.model_dump(exclude_none=True),
-                f,
-                allow_unicode=True,
-                default_flow_style=False,
-                sort_keys=False,
-            )
+            yaml.dump(data, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
 
     def merge_preset(self, preset_name: str | None):
         """将预设合并到搜索和下载配置"""
