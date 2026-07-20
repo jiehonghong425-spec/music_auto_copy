@@ -58,19 +58,37 @@ class NeteaseScraper:
             return []
 
         results = []
-        for s in songs:
+        # 并行检测所有歌曲的下载可用性
+        dl_checks = await asyncio.gather(
+            *[self._check_available(s["id"]) for s in songs],
+            return_exceptions=True,
+        )
+        for s, can_dl in zip(songs, dl_checks):
             artists = ", ".join(a.get("name", "") for a in s.get("artists", []))
+            can_dl = can_dl if isinstance(can_dl, bool) else False
+            sid = s["id"]
             results.append({
-                "id": s["id"],
+                "id": sid,
                 "title": s.get("name", ""),
                 "author": artists,
                 "album": s.get("album", {}).get("name", ""),
                 "duration": s.get("duration", 0) // 1000,
                 "source": "netease",
-                "preview_url": self.OUTER_URL.format(s["id"]),
-                "has_free": True,  # outer URL 通常有免费片段
+                "preview_url": self.OUTER_URL.format(sid),
+                "can_download": can_dl,
+                "dl_note": "✅ 可下载" if can_dl else "🔒 需VIP/Cookie",
             })
         return results
+
+    async def _check_available(self, song_id: int) -> bool:
+        """快速检测歌曲是否可免费下载"""
+        try:
+            outer = self.OUTER_URL.format(song_id)
+            r = await self.client.head(outer, headers=BASE_HEADERS, timeout=5, follow_redirects=True)
+            ct = r.headers.get("content-type", "")
+            return r.status_code == 200 and "audio" in ct
+        except Exception:
+            return False
 
     async def get_download_url(self, song_id: int, br: int = 128000) -> Optional[str]:
         """获取下载链接 — 多策略尝试
@@ -136,6 +154,7 @@ class QQMusicScraper:
             return []
 
         results = []
+        has_cookie = bool(self.cookies)
         for s in songs:
             singers = ", ".join(si.get("name", "") for si in s.get("singer", []))
             songmid = s.get("songmid", "")
@@ -147,7 +166,8 @@ class QQMusicScraper:
                 "duration": s.get("interval", 0),
                 "source": "qqmusic",
                 "preview_url": f"https://y.qq.com/n/ryqq/songDetail/{songmid}",
-                "has_free": False,  # QQ 免费试听基本需要登录
+                "can_download": has_cookie,
+                "dl_note": "✅ 可下载" if has_cookie else "🔒 需VIP/Cookie",
             })
         return results
 
@@ -220,6 +240,7 @@ class KugouScraper:
         except Exception:
             return []
 
+        has_cookie = bool(self.cookies)
         results = []
         for s in songs:
             results.append({
@@ -230,7 +251,8 @@ class KugouScraper:
                 "duration": s.get("duration", 0),
                 "source": "kugou",
                 "preview_url": s.get("share_url", ""),
-                "has_free": False,  # 酷狗现在大部分需要付费
+                "can_download": has_cookie,
+                "dl_note": "✅ 可下载" if has_cookie else "🔒 需VIP/Cookie",
             })
         return results
 

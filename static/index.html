@@ -424,7 +424,12 @@ async function searchAudio(){
     }
     div.innerHTML=`<h3>搜索结果 (${r.count} 首)</h3>`;
     r.items.forEach(item=>{
-      div.innerHTML+=`<div class="search-result"><div class="info"><div class="title">${item.title}</div><div class="meta">${item.author||''} · ${item.source||''} · ${item.album||''}</div></div><div class="actions"><button class="btn sm primary" onclick="downloadSingle(${item.id})">下载</button></div></div>`;
+      const canDl=item.can_download!==false;
+      const dur=item.duration?(' · '+item.duration+'s'):'';
+      const dlBtn=canDl
+        ?`<button class="btn sm primary" onclick="downloadSingle(${item.id})">下载</button>`
+        :`<button class="btn sm" disabled style="opacity:0.4" title="需要VIP Cookie">🔒 需VIP</button>`;
+      div.innerHTML+='<div class="search-result"><div class="info"><div class="title">'+item.title+' <span style="font-size:11px;color:'+(canDl?'var(--green)':'var(--yellow)')+'">'+item.dl_note+'</span></div><div class="meta">'+(item.author||'')+' · '+(item.source||'')+' · '+(item.album||'')+dur+'</div></div><div class="actions">'+dlBtn+'</div></div>';
     });
   }catch(e){div.innerHTML=`<p style="color:var(--red);padding:20px">搜索失败: ${e.message}</p>`}
 }
