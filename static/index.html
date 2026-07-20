@@ -359,9 +359,16 @@ function tabActions(i){
   }else if(t==='downloaded'){
     return `<button class="btn sm p" onclick="startSepOne(${i.id})">分离</button>`;
   }else if(t==='separated'){
-    let btns='';
-    if(i.instrumental_path)btns+=`<a href="${API}/files/${i.id}/download?stem=instrumental" class="btn sm" download>COPY 伴奏</a> `;
-    if(i.vocals_path)btns+=`<a href="${API}/files/${i.id}/download?stem=vocals" class="btn sm" download>COPY 人声</a>`;
+    let btns='<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">';
+    if(i.instrumental_path){
+      btns+=`<a href="${API}/files/${i.id}/download?stem=instrumental" class="btn sm" download>COPY 伴奏</a>`;
+      btns+=`<select onchange="downloadFormat(${i.id},'instrumental',this.value)" style="width:auto;padding:4px 6px;font-size:11px"><option>WAV</option><option>MP3</option><option>FLAC</option><option>OGG</option></select>`;
+    }
+    if(i.vocals_path){
+      btns+=`<a href="${API}/files/${i.id}/download?stem=vocals" class="btn sm" download>COPY 人声</a>`;
+      btns+=`<select onchange="downloadFormat(${i.id},'vocals',this.value)" style="width:auto;padding:4px 6px;font-size:11px"><option>WAV</option><option>MP3</option><option>FLAC</option><option>OGG</option></select>`;
+    }
+    btns+='</div>';
     return btns||'—';
   }else if(t==='failed'){
     return `<button class="btn sm" onclick="startSepOne(${i.id})">🔄 重试</button>`;
@@ -448,8 +455,9 @@ async function loadFiles(){
     return`<tr><td>${(i.title||'').substring(0,60)}</td><td>${i.author||''}</td><td><span class="tag ${sc}">${st}</span></td><td style="display:flex;gap:6px">${btns||'—'}</td></tr>`;
   }).join('')}catch(e){}
 }
-async function copyPath(id,stem){
-  try{const r=await api('POST','/files/'+id+'/copy?stem='+stem);await navigator.clipboard.writeText(r.path);toast('已复制路径')}catch(e){try{const r=await api('POST','/files/'+id+'/copy?stem='+stem);prompt('路径 (Ctrl+C):',r.path)}catch(e2){}}
+function downloadFormat(id,stem,fmt){
+  const url=API+'/files/'+id+'/download?stem='+stem+'&format='+fmt.toLowerCase();
+  const a=document.createElement('a');a.href=url;a.download='';document.body.appendChild(a);a.click();a.remove();
 }
 
 // ── Upload ──────────────────────────────────

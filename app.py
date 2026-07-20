@@ -599,31 +599,50 @@ async def copy_file(item_id: int, stem: str = "instrumental"):
 
 
 @app.get("/api/files/{item_id}/download")
-async def download_file(item_id: int, stem: str = "instrumental"):
-    """直接下载音频文件"""
+async def download_file(item_id: int, stem: str = "instrumental", format: str = "wav"):
+    """直接下载/转换音频文件。format=wav|mp3|flac|ogg"""
     item = db.get_item(item_id)
     if not item:
-        raise HTTPException(404, "文件不存在")
+        raise HTTPException(404, f"项目 {item_id} 不存在")
 
-    path_map = {
-        "instrumental": "instrumental_path",
-        "vocals": "vocals_path",
-        "download": "download_path",
-    }
+    path_map = {"instrumental": "instrumental_path", "vocals": "vocals_path", "download": "download_path"}
     path_key = path_map.get(stem, "instrumental_path")
     file_path = item.get(path_key, "")
-    if not file_path or not Path(file_path).exists():
-        raise HTTPException(404, f"文件不存在: {stem}")
+    if not file_path:
+        raise HTTPException(404, f"无 {stem} 路径记录")
 
-    # 安全文件名
-    safe_title = "".join(c for c in (item.get("title") or "audio") if c.isalnum() or c in " _-.")[:40]
-    p = Path(file_path)
-    filename = f"{safe_title}_{stem}{p.suffix}"
-    return FileResponse(
-        str(file_path),
-        filename=quote(filename, safe=" _-."),
-        media_type="audio/wav" if p.suffix.lower() == ".wav" else "audio/mpeg",
-    )
+    src = Path(file_path)
+    if not src.is_absolute():
+        src = Path.cwd() / file_path
+    if not src.exists():
+        raise HTTPException(404, f"源文件不存在")
+
+    # 如果请求格式与原文件相同，直接返回
+    if format == src.suffix.lstrip("."):
+        safe = "".join(c for c in (item.get("title") or "audio") if c.isalnum() or c in " _-.")[:40].strip()
+        return FileResponse(str(src), filename=f"{safe}_{stem}{src.suffix}", media_type=f"audio/{format}")
+
+    # 格式转换（FFmpeg）
+    if format not in ("wav", "mp3", "flac", "ogg"):
+        raise HTTPException(400, f"不支持的格式: {format}")
+
+    out_file = src.with_suffix(f".{format}")
+    if not out_file.exists():
+        try:
+            codec_map = {"mp3": "libmp3lame", "flac": "flac", "ogg": "libvorbis", "wav": "pcm_s16le"}
+            result = subprocess.run(
+                ["ffmpeg", "-i", str(src), "-acodec", codec_map.get(format, "copy"),
+                 "-y", str(out_file), "-loglevel", "error"],
+                capture_output=True, text=True, timeout=120,
+            )
+            if result.returncode != 0:
+                raise HTTPException(500, f"转换失败: {result.stderr[:200]}")
+        except subprocess.TimeoutExpired:
+            raise HTTPException(500, "转换超时")
+
+    safe = "".join(c for c in (item.get("title") or "audio") if c.isalnum() or c in " _-.")[:40].strip()
+    media_map = {"mp3": "audio/mpeg", "flac": "audio/flac", "ogg": "audio/ogg", "wav": "audio/wav"}
+    return FileResponse(str(out_file), filename=f"{safe}_{stem}.{format}", media_type=media_map.get(format, "audio/wav"))
 
 
 # ── 音频搜索 ──────────────────────────────────────────────
