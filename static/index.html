@@ -506,6 +506,7 @@ async function saveSettings(){
     let msg=[]; if(d.parsed.netease)msg.push('网易云'); if(d.parsed.qqmusic)msg.push('QQ'); if(d.parsed.kugou)msg.push('酷狗');
     toast('已识别: '+msg.join('+'));
   }else{toast('已保存')}
+  }catch(e){toast('保存失败: '+e.message,'er')}
 }
 async function loadSettings(){
   try{const c=await api('GET','/config');
