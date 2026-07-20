@@ -212,7 +212,7 @@ input:focus,select:focus{border-color:var(--accent)}
   <h2>音频搜索</h2>
   <div class="search-box">
     <span class="icon">🔍</span>
-    <input id="audio-search-input" placeholder="输入关键词搜索已分离的音频..." onkeyup="if(event.key==='Enter')doAudioSearch()">
+    <input id="audio-search-input" placeholder="输入英文关键词: jazz / piano / background / party..." onkeyup="if(event.key==='Enter')doAudioSearch()">
   </div>
   <div id="audio-search-results"></div>
 </div>
@@ -380,6 +380,8 @@ async function deleteSite(id){
 // ── Search ───────────────────────────────────────────
 let searchResults=[];
 async function searchAudio(){
+  const div=document.getElementById('search-results');
+  div.innerHTML='<p style="color:var(--dim)">搜索中... (AudioJungle 需要网络，可能需要 10-30 秒)</p>';
   try{
     const siteId=parseInt(document.getElementById('search-site').value);
     const r=await api('POST','/search',{
@@ -390,12 +392,15 @@ async function searchAudio(){
       max_items:parseInt(document.getElementById('search-max').value)||0,
     });
     searchResults=r.items;
-    const div=document.getElementById('search-results');
+    if(!r.count){
+      div.innerHTML='<p style="color:var(--dim);padding:20px">没有找到符合条件的结果，请调整搜索参数</p>';
+      return;
+    }
     div.innerHTML=`<h3>搜索结果 (${r.count} 首)</h3>`;
     r.items.forEach(item=>{
       div.innerHTML+=`<div class="search-result"><div class="info"><div class="title">${item.title}</div><div class="meta">${item.author||''} · $${item.price||0} · ${item.length||''}</div></div><div class="actions"><button class="btn sm primary" onclick="downloadSingle(${item.id})">下载</button></div></div>`;
     });
-  }catch(e){toast('搜索失败: '+e.message,'error')}
+  }catch(e){div.innerHTML=`<p style="color:var(--red);padding:20px">搜索失败: ${e.message}<br><small>提示: 中国大陆访问 AudioJungle 可能需要代理</small></p>`}
 }
 async function downloadSingle(id){
   try{await api('POST','/download',{item_ids:[id]});toast('下载完成');loadFiles()}
@@ -452,14 +457,19 @@ async function copyPath(itemId,stem){
 async function doAudioSearch(){
   const q=document.getElementById('audio-search-input').value.trim();
   if(!q)return;
+  const div=document.getElementById('audio-search-results');
+  div.innerHTML='<p style="color:var(--dim)">搜索中...</p>';
   try{
     const r=await api('GET','/search-audio?q='+encodeURIComponent(q));
-    const div=document.getElementById('audio-search-results');
+    if(!r.count){
+      div.innerHTML=`<p style="color:var(--dim);padding:20px">没有找到匹配 "<b>${q}</b>" 的结果<br><small>尝试用英文关键词搜索，如: jazz, piano, background, party</small></p>`;
+      return;
+    }
     div.innerHTML=`<h3>找到 ${r.count} 个结果</h3>`;
     r.results.forEach(item=>{
       div.innerHTML+=`<div class="search-result"><div class="info"><div class="title">${item.title}</div><div class="meta">${item.author||''} · 匹配度: ${item.score}</div></div><div class="actions">${item.instrumental_path?`<button class="btn sm" onclick="copyPath(${item.id},'instrumental')">📋 伴奏</button>`:''}${item.vocals_path?`<button class="btn sm" onclick="copyPath(${item.id},'vocals')">🎤 人声</button>`:''}</div></div>`;
     });
-  }catch(e){toast('搜索失败: '+e.message,'error')}
+  }catch(e){div.innerHTML=`<p style="color:var(--red)">搜索失败: ${e.message}</p>`}
 }
 
 // ── Upload ────────────────────────────────────────────
