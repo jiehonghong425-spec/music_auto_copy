@@ -331,18 +331,10 @@ async function loadTabItems(){
       div.innerHTML=`<div class="empty">暂无${TAB_LABELS[t]}的音频</div>`;
     }else{
       div.innerHTML=r.items.map(i=>{
-        const src=(()=>{try{return JSON.parse(i.tags||'{}').source||''}catch(e){return''}})();
-        const dlPath=i.download_path||'';
-        const inst=i.instrumental_path||'';
-        const voc=i.vocals_path||'';
         let meta=[];
         if(i.author)meta.push(i.author);
-        if(src)meta.push('来源: '+src);
-        if(dlPath)meta.push('<span class="src">源: '+dlPath+'</span>');
-        if(inst)meta.push('<span class="src">伴奏: '+inst+'</span>');
-        if(voc)meta.push('<span class="src">人声: '+voc+'</span>');
         if(i.error_message)meta.push('❌ '+i.error_message);
-        return `<div class="list-item"><div class="li-info"><div class="li-title">${i.title||'(无标题)'}</div><div class="li-meta">${meta.join(' · ')}</div></div>${tabActions(i)}</div>`;
+        return `<div class="list-item" id="item-${i.id}"><div class="li-info"><div class="li-title">${i.title||'(无标题)'}</div><div class="li-meta">${meta.join(' · ')||'点击操作加载详情...'}</div></div><div class="li-detail" id="detail-${i.id}">${tabActions(i)}</div></div>`;
       }).join('');
     }
 
@@ -360,25 +352,40 @@ async function loadTabItems(){
 function tabActions(i){
   const t=currentTab;
   if(t==='pending'){
-    return `<div style="display:flex;gap:6px"><button class="btn sm p" onclick="downloadSingle(${i.id})">下载</button><button class="btn sm d" onclick="removeFromQueue(${i.id})">移除</button></div>`;
+    return `<button class="btn sm p" onclick="downloadSingle(${i.id})">下载</button> <button class="btn sm d" onclick="removeFromQueue(${i.id})">移除</button>`;
   }else if(t==='downloaded'){
     return `<button class="btn sm p" onclick="startSepOne(${i.id})">分离</button>`;
   }else if(t==='separated'){
-    let btns='<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">';
-    if(i.instrumental_path){
-      btns+=`<a href="${API}/files/${i.id}/download?stem=instrumental" class="btn sm" download>COPY 伴奏</a>`;
-      btns+=`<select onchange="downloadFormat(${i.id},'instrumental',this.value)" style="width:auto;padding:4px 6px;font-size:11px"><option>WAV</option><option>MP3</option><option>FLAC</option><option>OGG</option></select>`;
-    }
-    if(i.vocals_path){
-      btns+=`<a href="${API}/files/${i.id}/download?stem=vocals" class="btn sm" download>COPY 人声</a>`;
-      btns+=`<select onchange="downloadFormat(${i.id},'vocals',this.value)" style="width:auto;padding:4px 6px;font-size:11px"><option>WAV</option><option>MP3</option><option>FLAC</option><option>OGG</option></select>`;
-    }
-    btns+='</div>';
-    return btns||'—';
+    return `<button class="btn sm" onclick="loadAndDownload(${i.id})">COPY</button>`;
   }else if(t==='failed'){
     return `<button class="btn sm" onclick="startSepOne(${i.id})">🔄 重试</button>`;
   }
   return '';
+}
+
+async function loadAndDownload(id){
+  // 懒加载：先获取文件详情，再展示下载选项
+  const targets=[document.getElementById('detail-'+id),document.getElementById('fbtn-'+id)].filter(Boolean);
+  targets.forEach(el=>el.innerHTML='<span style="color:var(--muted);font-size:12px">...</span>');
+  try{
+    const item=await api('GET','/files/'+id);
+    let html='<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">';
+    if(item.instrumental_path){
+      const p=item.instrumental_path.replace(/\\/g,'/');
+      html+=`<a href="${API}/files/${id}/download?stem=instrumental" class="btn sm" download>COPY 伴奏</a>`;
+      html+=`<select onchange="downloadFormat(${id},'instrumental',this.value)" style="width:auto;padding:4px 6px;font-size:11px"><option>WAV</option><option>MP3</option><option>FLAC</option><option>OGG</option></select>`;
+      html+=`<span class="src" style="font-size:10px">${p.split('/').pop()}</span>`;
+    }
+    if(item.vocals_path){
+      html+=`<a href="${API}/files/${id}/download?stem=vocals" class="btn sm" download>COPY 人声</a>`;
+      html+=`<select onchange="downloadFormat(${id},'vocals',this.value)" style="width:auto;padding:4px 6px;font-size:11px"><option>WAV</option><option>MP3</option><option>FLAC</option><option>OGG</option></select>`;
+    }
+    if(!item.instrumental_path&&!item.vocals_path&&item.download_path){
+      html+=`<a href="${API}/files/${id}/download?stem=download" class="btn sm" download>COPY 源文件</a>`;
+    }
+    html+='</div>';
+    targets.forEach(el=>el.innerHTML=html);
+  }catch(e){targets.forEach(el=>el.innerHTML='<span style="color:var(--red);font-size:12px">加载失败</span>')}
 }
 
 // ── Queue (wrappers) ───────────────────────
@@ -462,12 +469,8 @@ async function deleteSite(id){if(!confirm('删除此站点？'))return;try{await
 async function loadFiles(){
   try{const f=document.getElementById('file-filter')?.value||'';const r=await api('GET','/files?status='+f);
   document.getElementById('files-tbody').innerHTML=r.items.map(i=>{
-    let btns='';
-    if(i.instrumental_path)btns+=`<a href="${API}/files/${i.id}/download?stem=instrumental" class="btn sm" download>COPY 伴奏</a> `;
-    if(i.vocals_path)btns+=`<a href="${API}/files/${i.id}/download?stem=vocals" class="btn sm" download>COPY 人声</a> `;
-    if(i.download_path)btns+=`<a href="${API}/files/${i.id}/download?stem=download" class="btn sm" download>COPY 源文件</a>`;
     const st=i.status,sc=st==='separated'?'ok':st==='downloaded'?'info':st==='failed'?'err':'warn';
-    return`<tr><td>${(i.title||'').substring(0,60)}</td><td>${i.author||''}</td><td><span class="tag ${sc}">${st}</span></td><td style="display:flex;gap:6px">${btns||'—'}</td></tr>`;
+    return`<tr><td>${(i.title||'').substring(0,60)}</td><td>${i.author||''}</td><td><span class="tag ${sc}">${st}</span></td><td id="fbtn-${i.id}"><button class="btn sm" onclick="loadAndDownload(${i.id})">COPY</button></td></tr>`;
   }).join('')}catch(e){}
 }
 function downloadFormat(id,stem,fmt){

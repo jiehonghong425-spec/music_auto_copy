@@ -356,7 +356,7 @@ class Database:
         ]
 
     def get_all_items(self, status_filter: str = "", limit: int = 100, offset: int = 0) -> list[dict]:
-        """获取所有项目，可按状态筛选"""
+        """获取所有项目（全字段），可按状态筛选"""
         if status_filter:
             return [
                 dict(row)
@@ -369,6 +369,25 @@ class Database:
             dict(row)
             for row in self.conn.execute(
                 "SELECT * FROM items ORDER BY id DESC LIMIT ? OFFSET ?",
+                (limit, offset),
+            ).fetchall()
+        ]
+
+    def get_all_items_light(self, status_filter: str = "", limit: int = 100, offset: int = 0) -> list[dict]:
+        """获取所有项目（仅必要字段，快速加载）"""
+        fields = "id, title, author, status, error_message"
+        if status_filter:
+            return [
+                dict(row)
+                for row in self.conn.execute(
+                    f"SELECT {fields} FROM items WHERE status = ? ORDER BY id DESC LIMIT ? OFFSET ?",
+                    (status_filter, limit, offset),
+                ).fetchall()
+            ]
+        return [
+            dict(row)
+            for row in self.conn.execute(
+                f"SELECT {fields} FROM items ORDER BY id DESC LIMIT ? OFFSET ?",
                 (limit, offset),
             ).fetchall()
         ]

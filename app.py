@@ -627,8 +627,8 @@ async def list_files(
     limit: int = 100,
     offset: int = 0,
 ):
-    """列出所有文件"""
-    items = db.get_all_items(status_filter=status, limit=limit, offset=offset)
+    """列出所有文件（精简字段，快速加载）"""
+    items = db.get_all_items_light(status_filter=status, limit=limit, offset=offset)
     stats = db.get_stats()
     return {"items": items, "stats": stats}
 
