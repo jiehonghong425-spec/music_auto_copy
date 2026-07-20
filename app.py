@@ -486,6 +486,9 @@ async def index():
 # ── 启动 ──────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    import uvicorn
+    import uvicorn, webbrowser, threading
     cfg = load_config("./config.yaml")
+    url = f"http://localhost:{cfg.server.port}"
+    threading.Timer(1.5, lambda: webbrowser.open(url)).start()
+    print(f"  浏览器打开: {url}")
     uvicorn.run("app:app", host=cfg.server.host, port=cfg.server.port, reload=True)
