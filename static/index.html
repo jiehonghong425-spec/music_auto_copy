@@ -503,8 +503,14 @@ async function saveSettings(){
   const r=await fetch(API+'/cookies',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body});
   const d=await r.json();
   if(d.parsed){
-    let msg=[]; if(d.parsed.netease)msg.push('网易云'); if(d.parsed.qqmusic)msg.push('QQ'); if(d.parsed.kugou)msg.push('酷狗');
-    toast('已识别: '+msg.join('+'));
+    let msgs=[];
+    ['netease','qqmusic','kugou'].forEach(k=>{
+      if(d.parsed[k]){
+        const v=d.valid&&d.valid[k];
+        msgs.push(k+' '+(v===true?'OK':v===false?'FAIL':'?'));
+      }
+    });
+    toast('Cookie: '+msgs.join(', '));
   }else{toast('已保存')}
   }catch(e){toast('保存失败: '+e.message,'er')}
 }

@@ -144,7 +144,7 @@ async def get_config():
 
 @app.post("/api/cookies")
 async def save_cookies(netease: str = "", qqmusic: str = "", kugou: str = "", raw: str = ""):
-    """保存 VIP Cookie — 支持粘贴完整 Cookie 字符串自动解析"""
+    """保存并验证 VIP Cookie"""
     # 如果粘贴了原始 Cookie 字符串，自动解析
     if raw and not netease:
         pairs = {}
@@ -153,25 +153,87 @@ async def save_cookies(netease: str = "", qqmusic: str = "", kugou: str = "", ra
             if "=" in part:
                 k, v = part.split("=", 1)
                 pairs[k.strip()] = v.strip()
-        # 网易云: MUSIC_U
-        if "MUSIC_U" in pairs:
-            netease = pairs["MUSIC_U"]
-        # QQ音乐: uin 或 qqmusic_key
-        if "uin" in pairs:
-            qqmusic = pairs["uin"]
-        elif "qqmusic_key" in pairs:
-            qqmusic = pairs["qqmusic_key"]
-        # 酷狗: kg_mid 或 kg_mid_v2
-        if "kg_mid" in pairs:
-            kugou = pairs["kg_mid"]
-        elif "kg_mid_v2" in pairs:
-            kugou = pairs["kg_mid_v2"]
+        if "MUSIC_U" in pairs: netease = pairs["MUSIC_U"]
+        if "uin" in pairs: qqmusic = pairs["uin"]
+        elif "qqmusic_key" in pairs: qqmusic = pairs["qqmusic_key"]
+        if "kg_mid" in pairs: kugou = pairs["kg_mid"]
+        elif "kg_mid_v2" in pairs: kugou = pairs["kg_mid_v2"]
 
     if netease: config.cookies.netease = netease
     if qqmusic: config.cookies.qqmusic = qqmusic
     if kugou: config.cookies.kugou = kugou
     config.save("./config.yaml")
-    return {"ok": True, "parsed": {"netease": bool(netease), "qqmusic": bool(qqmusic), "kugou": bool(kugou)}}
+
+    # 验证 Cookie 是否有效
+    valid = {}
+    verify_tasks = []
+    if netease:
+        verify_tasks.append(("netease", _verify_netease_cookie(netease)))
+    if qqmusic:
+        verify_tasks.append(("qqmusic", _verify_qq_cookie(qqmusic)))
+    if kugou:
+        verify_tasks.append(("kugou", _verify_kugou_cookie(kugou)))
+
+    for name, task in verify_tasks:
+        try:
+            valid[name] = await task
+        except Exception:
+            valid[name] = False
+
+    return {
+        "ok": True,
+        "parsed": {"netease": bool(netease), "qqmusic": bool(qqmusic), "kugou": bool(kugou)},
+        "valid": valid,
+    }
+
+
+async def _verify_netease_cookie(cookie: str) -> bool:
+    """验证网易云 Cookie：请求用户信息接口"""
+    try:
+        async with httpx.AsyncClient(timeout=8) as cli:
+            r = await cli.get(
+                "https://music.163.com/api/nuser/account/get",
+                headers={"Cookie": f"MUSIC_U={cookie}", "User-Agent": "Mozilla/5.0", "Referer": "https://music.163.com"},
+            )
+            if r.status_code == 200:
+                data = r.json()
+                return data.get("code") == 200
+            return False
+    except Exception:
+        return False
+
+
+async def _verify_qq_cookie(cookie: str) -> bool:
+    """验证 QQ音乐 Cookie"""
+    try:
+        async with httpx.AsyncClient(timeout=8) as cli:
+            r = await cli.get(
+                "https://u.y.qq.com/cgi-bin/musicu.fcg",
+                headers={"Cookie": f"uin={cookie}", "User-Agent": "Mozilla/5.0", "Referer": "https://y.qq.com"},
+                params={"data": '{"req_0":{"module":"userInfo.BaseUserInfoServer","method":"get_user_baseinfo_v2","param":{}}}'},
+            )
+            if r.status_code == 200:
+                data = r.json()
+                return data.get("req_0", {}).get("code") == 0
+            return False
+    except Exception:
+        return False
+
+
+async def _verify_kugou_cookie(cookie: str) -> bool:
+    """验证酷狗 Cookie：请求用户信息"""
+    try:
+        async with httpx.AsyncClient(timeout=8) as cli:
+            r = await cli.get(
+                "http://kmr.service.kugou.com/v1/user/get_info",
+                headers={"Cookie": f"kg_mid={cookie}", "User-Agent": "Mozilla/5.0"},
+            )
+            if r.status_code == 200:
+                data = r.json()
+                return data.get("status") == 1 or data.get("error_code") == 0
+            return False
+    except Exception:
+        return False
 
 
 @app.put("/api/config")
