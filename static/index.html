@@ -239,14 +239,24 @@ tr:hover td{background:rgba(255,255,255,.015)}
   <div class="form-grp" style="margin-bottom:12px">
     <label>一键粘贴完整 Cookie（推荐）</label>
     <input id="cfg-cookie-raw" placeholder="浏览器打开 music.163.com → F12 → Network → 任意请求 → Request Headers → 复制 Cookie: 后面一整行贴到这里" style="font-family:monospace;font-size:12px">
-    <p style="font-size:10px;color:var(--muted);margin-top:4px">自动识别 MUSIC_U / uin / kg_mid，无需手动找</p>
+    <p style="font-size:10px;color:var(--muted);margin-top:4px">自动识别 MUSIC_U / uin / kg_mid</p>
   </div>
   <div class="form-row">
-    <div class="form-grp"><label>网易云 MUSIC_U（自动解析）</label><input id="cfg-cookie-netease" placeholder="自动从上面解析"></div>
-    <div class="form-grp"><label>QQ音乐 uin（自动解析）</label><input id="cfg-cookie-qqmusic" placeholder="自动从上面解析"></div>
-    <div class="form-grp"><label>酷狗 kg_mid（自动解析）</label><input id="cfg-cookie-kugou" placeholder="自动从上面解析"></div>
+    <div class="form-grp">
+      <label>网易云 <span id="cookie-status-netease"></span></label>
+      <input id="cfg-cookie-netease" placeholder="MUSIC_U 值">
+    </div>
+    <div class="form-grp">
+      <label>QQ音乐 <span id="cookie-status-qqmusic"></span></label>
+      <input id="cfg-cookie-qqmusic" placeholder="uin 值">
+    </div>
+    <div class="form-grp">
+      <label>酷狗 <span id="cookie-status-kugou"></span></label>
+      <input id="cfg-cookie-kugou" placeholder="kg_mid 值">
+    </div>
   </div>
-  <button class="btn p" onclick="saveSettings()">💾 保存 Cookie</button>
+  <button class="btn p" onclick="saveCookies()">💾 保存并验证 Cookie</button>
+  <span id="cookie-verify-result" style="margin-left:12px;font-size:13px"></span>
 </div>
 
 </main>
@@ -494,25 +504,36 @@ async function uploadFiles(files){
 async function startSepOne(id){try{await api('POST','/separate',{item_ids:[id]});toast('已开始分离')}catch(e){toast(e.message,'er')}}
 
 // ── Settings ────────────────────────────────
-async function saveSettings(){
-  try{await api('PUT','/config',{model:document.getElementById('cfg-model').value,jobs:parseInt(document.getElementById('cfg-jobs').value),concurrency:parseInt(document.getElementById('cfg-concurrency').value),device:document.getElementById('cfg-device').value,output_dir:document.getElementById('cfg-output').value});
+async function saveCookies(){
   const raw=document.getElementById('cfg-cookie-raw').value;
   const body=raw
     ?`raw=${encodeURIComponent(raw)}`
     :`netease=${encodeURIComponent(document.getElementById('cfg-cookie-netease').value)}&qqmusic=${encodeURIComponent(document.getElementById('cfg-cookie-qqmusic').value)}&kugou=${encodeURIComponent(document.getElementById('cfg-cookie-kugou').value)}`;
-  const r=await fetch(API+'/cookies',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body});
-  const d=await r.json();
-  if(d.parsed){
-    let msgs=[];
+  const res=document.getElementById('cookie-verify-result');
+  res.innerHTML='<span style="color:var(--yellow)">验证中...</span>';
+  ['netease','qqmusic','kugou'].forEach(k=>{document.getElementById('cookie-status-'+k).textContent=''});
+  try{
+    const r=await fetch(API+'/cookies',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body});
+    const d=await r.json();
+    const valid=d.valid||{};
+    let icons=[];
     ['netease','qqmusic','kugou'].forEach(k=>{
-      if(d.parsed[k]){
-        const v=d.valid&&d.valid[k];
-        msgs.push(k+' '+(v===true?'OK':v===false?'FAIL':'?'));
-      }
+      const v=valid[k];
+      const el=document.getElementById('cookie-status-'+k);
+      if(v===true){el.innerHTML='<span class="tag ok">有效</span>';icons.push(k+' OK');}
+      else if(v===false){el.innerHTML='<span class="tag err">无效</span>';icons.push(k+' FAIL');}
+      else if(d.parsed&&d.parsed[k]){el.innerHTML='<span class="tag warn">未知</span>'}
     });
-    toast('Cookie: '+msgs.join(', '));
-  }else{toast('已保存')}
-  }catch(e){toast('保存失败: '+e.message,'er')}
+    res.innerHTML=icons.length?`<span style="color:${icons.some(i=>i.includes('FAIL'))?'var(--red)':'var(--green)'};font-weight:600">${icons.join(' · ')}</span>`:'<span style="color:var(--muted)">已保存</span>';
+    if(icons.length)toast('Cookie: '+icons.join(', '));
+  }catch(e){
+    res.innerHTML='<span style="color:var(--red)">验证失败: '+e.message+'</span>';
+  }
+}
+
+async function saveSettings(){
+  try{await api('PUT','/config',{model:document.getElementById('cfg-model').value,jobs:parseInt(document.getElementById('cfg-jobs').value),concurrency:parseInt(document.getElementById('cfg-concurrency').value),device:document.getElementById('cfg-device').value,output_dir:document.getElementById('cfg-output').value});
+  toast('设置已保存');}catch(e){toast('保存失败: '+e.message,'er')}
 }
 async function loadSettings(){
   try{const c=await api('GET','/config');
