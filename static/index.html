@@ -104,6 +104,14 @@ tr:hover td{background:rgba(255,255,255,.015)}
 .slider span{min-width:32px;text-align:center;font-weight:600;font-size:14px}
 /* Empty state */
 .empty{padding:40px;text-align:center;color:var(--muted);font-size:13px;border:1px dashed var(--border);border-radius:var(--radius)}
+/* Tabs */
+.tab{background:none;border:none;color:var(--muted);padding:10px 20px;font-size:13px;cursor:pointer;border-bottom:2px solid transparent;transition:.15s;display:flex;align-items:center;gap:6px}
+.tab:hover{color:var(--text)}
+.tab.active{color:var(--text);border-bottom-color:var(--accent)}
+.tab .ct{background:var(--border);padding:1px 8px;border-radius:10px;font-size:11px;min-width:20px;text-align:center}
+.tab.active .ct{background:var(--accent);color:#fff}
+/* Source link */
+.src{font-family:monospace;font-size:11px;color:var(--muted);background:var(--surface);padding:2px 8px;border-radius:4px;word-break:break-all}
 </style>
 </head>
 <body>
@@ -125,39 +133,36 @@ tr:hover td{background:rgba(255,255,255,.015)}
 <!-- ═══════════════ DASHBOARD ═══════════════ -->
 <div id="page-dashboard" class="page active">
   <h2>仪表盘</h2>
-  <div class="stats">
-    <div class="stat accent"><div class="val" id="s-pending">0</div><div class="lbl">待处理队列</div></div>
-    <div class="stat yellow"><div class="val" id="s-downloaded">0</div><div class="lbl">已下载</div></div>
-    <div class="stat green"><div class="val" id="s-separated">0</div><div class="lbl">已分离</div></div>
-    <div class="stat red"><div class="val" id="s-failed">0</div><div class="lbl">失败</div></div>
+  <!-- Tab 切换 -->
+  <div class="tabs" style="display:flex;gap:0;margin-bottom:20px;border-bottom:1px solid var(--border)">
+    <button class="tab active" onclick="switchTab('pending')" data-tab="pending">🔵 待处理 <span class="ct" id="s-pending">0</span></button>
+    <button class="tab" onclick="switchTab('downloaded')" data-tab="downloaded">🟡 已下载 <span class="ct" id="s-downloaded">0</span></button>
+    <button class="tab" onclick="switchTab('separated')" data-tab="separated">🟢 已分离 <span class="ct" id="s-separated">0</span></button>
+    <button class="tab" onclick="switchTab('failed')" data-tab="failed">🔴 失败 <span class="ct" id="s-failed">0</span></button>
   </div>
 
-  <h3>待处理队列 <span id="q-count" style="color:var(--muted);font-weight:400"></span></h3>
-  <div id="queue-list"><div class="empty">队列为空，去「音频搜索」添加音乐</div></div>
-  <div class="actions" id="queue-actions" style="display:none">
-    <button class="btn p" onclick="downloadQueue()">📥 下载全部</button>
-    <button class="btn" onclick="startSeparation()">🎵 人声分离</button>
-    <button class="btn d" onclick="clearQueue()">清空</button>
-  </div>
-
-  <h3>分离进度</h3>
-  <div class="progress-card">
+  <!-- 分离进度条 -->
+  <div class="progress-card" style="margin-bottom:16px">
     <div style="display:flex;justify-content:space-between;align-items:center">
       <span id="p-status" style="font-size:13px">⚪ 空闲</span>
       <span id="p-eta" style="font-size:12px;color:var(--muted)"></span>
     </div>
     <div class="progress-bar"><div class="progress-fill" id="p-bar" style="width:0%"></div></div>
-    <div class="progress-meta">
-      <span id="p-title">等待任务</span>
-      <span id="p-count">0/0</span>
-    </div>
+    <div class="progress-meta"><span id="p-title">等待任务</span><span id="p-count">0/0</span></div>
   </div>
+
+  <!-- 分离控制 -->
   <div class="actions">
     <select id="sep-model" style="width:auto"><option value="htdemucs">htdemucs (快)</option><option value="htdemucs_ft">htdemucs_ft (高质量)</option></select>
     <select id="sep-jobs" style="width:auto"><option value="1">1 线程</option><option value="2">2 线程</option><option value="4" selected>4 线程</option><option value="8">8 线程</option></select>
     <button class="btn p" onclick="startSeparation()">▶ 开始分离</button>
     <button class="btn d" onclick="stopSeparation()">⏹ 停止</button>
   </div>
+
+  <!-- 列表区 -->
+  <h3 id="tab-title" style="margin-top:24px">待处理</h3>
+  <div class="actions" id="tab-actions"></div>
+  <div id="tab-list"><div class="empty">加载中...</div></div>
 </div>
 
 <!-- ═══════════════ SOURCES ═══════════════ -->
@@ -261,7 +266,7 @@ function nav(p){
   document.querySelectorAll('.sidebar a').forEach(a=>a.classList.remove('active'));
   document.getElementById('page-'+p).classList.add('active');
   document.querySelector(`[data-page="${p}"]`).classList.add('active');
-  p==='dashboard'&&(refreshDashboard(),loadQueue());
+  p==='dashboard'&&(refreshDashboard(),loadTabItems());
   p==='sources'&&loadSites();
   p==='files'&&loadFiles();
 }
@@ -290,24 +295,107 @@ async function startSeparation(){
 }
 async function stopSeparation(){try{await api('POST','/separate/stop');toast('已停止')}catch(e){toast(e.message,'er')}}
 
-// ── Queue ───────────────────────────────────
-async function loadQueue(){
-  try{const r=await api('GET','/queue');document.getElementById('q-count').textContent=r.count+' 首';const d=document.getElementById('queue-list');const a=document.getElementById('queue-actions');
-  if(!r.count){d.innerHTML='<div class="empty">队列为空，去「音频搜索」添加音乐</div>';a.style.display='none';return}
-  a.style.display='flex';
-  d.innerHTML=r.items.map(i=>`<div class="list-item"><div class="li-info"><div class="li-title">${i.title}</div><div class="li-meta">${i.author||''} · ${(()=>{try{return JSON.parse(i.tags||'{}').source||''}catch(e){return''}})()}</div></div><button class="btn sm d" onclick="removeFromQueue(${i.id})">移除</button></div>`).join('');
-  }catch(e){}
+// ── Tab System ─────────────────────────────
+let currentTab='pending';
+function switchTab(t){
+  currentTab=t;
+  document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active'));
+  document.querySelector(`[data-tab="${t}"]`).classList.add('active');
+  loadTabItems();
 }
+const TAB_LABELS={pending:'待处理',downloaded:'已下载',separated:'已分离',failed:'失败'};
+const TAB_ICONS={pending:'🔵',downloaded:'🟡',separated:'🟢',failed:'🔴'};
+
+async function loadTabItems(){
+  const t=currentTab;
+  document.getElementById('tab-title').textContent=TAB_ICONS[t]+' '+TAB_LABELS[t];
+  const div=document.getElementById('tab-list');
+  const acts=document.getElementById('tab-actions');
+  div.innerHTML='<div class="empty">加载中...</div>';
+  acts.innerHTML='';
+
+  try{
+    const r=await api('GET','/files?status='+t+'&limit=200');
+    // Update stat counts
+    ['pending','downloaded','separated','failed'].forEach(s=>{
+      const el=document.getElementById('s-'+s);
+      if(el)el.textContent=r.stats[s]||0;
+    });
+
+    if(!r.items.length){
+      div.innerHTML=`<div class="empty">暂无${TAB_LABELS[t]}的音频</div>`;
+    }else{
+      div.innerHTML=r.items.map(i=>{
+        const src=(()=>{try{return JSON.parse(i.tags||'{}').source||''}catch(e){return''}})();
+        const dlPath=i.download_path||'';
+        const inst=i.instrumental_path||'';
+        const voc=i.vocals_path||'';
+        let meta=[];
+        if(i.author)meta.push(i.author);
+        if(src)meta.push('来源: '+src);
+        if(dlPath)meta.push('<span class="src">源: '+dlPath+'</span>');
+        if(inst)meta.push('<span class="src">伴奏: '+inst+'</span>');
+        if(voc)meta.push('<span class="src">人声: '+voc+'</span>');
+        if(i.error_message)meta.push('❌ '+i.error_message);
+        return `<div class="list-item"><div class="li-info"><div class="li-title">${i.title||'(无标题)'}</div><div class="li-meta">${meta.join(' · ')}</div></div>${tabActions(i)}</div>`;
+      }).join('');
+    }
+
+    // 各 tab 的操作按钮
+    if(t==='pending'){
+      acts.innerHTML=`<button class="btn p" onclick="downloadQueue()">📥 下载全部</button><button class="btn d" onclick="clearQueue()">清空队列</button>`;
+    }else if(t==='downloaded'){
+      acts.innerHTML=`<button class="btn p" onclick="startSeparation()">🎵 全部分离</button>`;
+    }else if(t==='failed'){
+      acts.innerHTML=`<button class="btn" onclick="retryFailed()">🔄 重试全部</button>`;
+    }
+  }catch(e){div.innerHTML='<div class="empty">加载失败</div>'}
+}
+
+function tabActions(i){
+  const t=currentTab;
+  if(t==='pending'){
+    return `<div style="display:flex;gap:6px"><button class="btn sm p" onclick="downloadSingle(${i.id})">下载</button><button class="btn sm d" onclick="removeFromQueue(${i.id})">移除</button></div>`;
+  }else if(t==='downloaded'){
+    return `<button class="btn sm p" onclick="startSepOne(${i.id})">分离</button>`;
+  }else if(t==='separated'){
+    let btns='';
+    if(i.instrumental_path)btns+=`<button class="btn sm" onclick="copyPath(${i.id},'instrumental')">📋 伴奏</button> `;
+    if(i.vocals_path)btns+=`<button class="btn sm" onclick="copyPath(${i.id},'vocals')">🎤 人声</button>`;
+    return btns||'—';
+  }else if(t==='failed'){
+    return `<button class="btn sm" onclick="startSepOne(${i.id})">🔄 重试</button>`;
+  }
+  return '';
+}
+
+// ── Queue (wrappers) ───────────────────────
 async function addToQueue(id,title,author,url,source){
-  try{const r=await api('POST','/queue/add',{items:[{id,title,author,preview_url:url,source,source_id:id}]});toast('已加入');loadQueue()}catch(e){toast(e.message,'er')}
+  try{const r=await api('POST','/queue/add',{items:[{id,title,author,preview_url:url,source,source_id:id}]});toast('已加入');if(currentTab==='pending')loadTabItems()}catch(e){toast(e.message,'er')}
 }
-async function removeFromQueue(id){try{await api('DELETE','/queue/'+id);loadQueue()}catch(e){}}
+async function removeFromQueue(id){try{await api('DELETE','/queue/'+id);loadTabItems()}catch(e){}}
 async function downloadQueue(){
-  try{const q=await api('GET','/queue');if(!q.count)return toast('队列为空','er');const r=await api('POST','/download',{item_ids:q.items.map(i=>i.id)});toast('已下载 '+r.downloaded+' 首');loadQueue();loadFiles()}catch(e){toast(e.message,'er')}
+  try{const q=await api('GET','/queue');if(!q.count)return toast('队列为空','er');const r=await api('POST','/download',{item_ids:q.items.map(i=>i.id)});toast('已下载 '+r.downloaded+' 首');loadTabItems()}catch(e){toast(e.message,'er')}
 }
 async function clearQueue(){
-  if(!confirm('清空队列？'))return;const q=await api('GET','/queue');for(const i of q.items)await api('DELETE','/queue/'+i.id).catch(()=>{});loadQueue()
+  if(!confirm('清空待处理队列？'))return;const q=await api('GET','/queue');for(const i of q.items)await api('DELETE','/queue/'+i.id).catch(()=>{});loadTabItems()
 }
+async function retryFailed(){
+  const r=await api('GET','/files?status=failed&limit=200');
+  if(!r.items.length)return toast('没有失败项');
+  await api('POST','/separate',{item_ids:r.items.map(i=>i.id)});toast('已重试');loadTabItems()
+}
+
+async function downloadSingle(id){
+  try{await api('POST','/download',{item_ids:[id]});toast('已下载');loadTabItems()}catch(e){toast(e.message,'er')}
+}
+
+// Update refresh function
+const origRefresh=refreshDashboard;
+refreshDashboard=function(){
+  // Update stat counts via SSE already handled
+  if(currentTab)loadTabItems();
+};
 
 // ── Sites & Search ──────────────────────────
 let searchResults=[],currentSiteType='audiojungle';
