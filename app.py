@@ -123,6 +123,8 @@ async def get_config():
         "output_dir": str(config.separation.local.output_dir),
         "download_dir": str(config.download.output_dir),
         "price_max": config.search.price_max,
+        "port": config.server.port,
+        "host": config.server.host,
     }
 
 
@@ -485,5 +487,5 @@ async def index():
 
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.environ.get("PORT", "8765"))
-    uvicorn.run("app:app", host="0.0.0.0", port=port, reload=True)
+    cfg = load_config("./config.yaml")
+    uvicorn.run("app:app", host=cfg.server.host, port=cfg.server.port, reload=True)

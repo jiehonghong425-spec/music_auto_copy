@@ -47,3 +47,7 @@ separation:
 progress:
   db_path: ./progress.db   # SQLite 进度数据库
   resume: true             # 是否自动断点续传
+
+server:
+  port: 8765               # Web 服务端口
+  host: 0.0.0.0            # 监听地址

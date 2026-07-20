@@ -69,6 +69,12 @@ class ProgressConfig(BaseModel):
     resume: bool = True
 
 
+class ServerConfig(BaseModel):
+    """Web 服务配置"""
+    port: int = 8765
+    host: str = "0.0.0.0"
+
+
 class Config(BaseModel):
     """应用总配置"""
     audiojungle: AudioJungleConfig = Field(default_factory=AudioJungleConfig)
@@ -76,6 +82,7 @@ class Config(BaseModel):
     download: DownloadConfig = Field(default_factory=DownloadConfig)
     separation: SeparationConfig = Field(default_factory=SeparationConfig)
     progress: ProgressConfig = Field(default_factory=ProgressConfig)
+    server: ServerConfig = Field(default_factory=ServerConfig)
 
     @classmethod
     def load(cls, path: Path | str = "./config.yaml") -> "Config":
