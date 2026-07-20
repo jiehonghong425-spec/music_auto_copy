@@ -178,18 +178,26 @@ async def search_audio(body: SearchRequest):
         max_items=body.max_items if body.max_items > 0 else config.search.max_items,
     )
 
-    async with AudioJungleClient(config) as client:
-        items = await client.search_items(sc)
-        for item in items:
-            db.insert_item({
-                "id": item["id"],
-                "title": item.get("title", ""),
-                "author": item.get("author", ""),
-                "preview_url": item.get("preview_url", ""),
-                "price_cents": item.get("price_cents", 0),
-                "category": item.get("category", ""),
-                "tags": [],
-            })
+    try:
+        async with AudioJungleClient(config) as client:
+            items = await asyncio.wait_for(
+                client.search_items(sc), timeout=120
+            )
+    except asyncio.TimeoutError:
+        raise HTTPException(504, "搜索超时，请检查网络连接（AudioJungle 可能需要代理）")
+    except Exception as e:
+        raise HTTPException(502, f"搜索失败: {str(e)[:200]}")
+
+    for item in items:
+        db.insert_item({
+            "id": item["id"],
+            "title": item.get("title", ""),
+            "author": item.get("author", ""),
+            "preview_url": item.get("preview_url", ""),
+            "price_cents": item.get("price_cents", 0),
+            "category": item.get("category", ""),
+            "tags": [],
+        })
     return {"items": items, "count": len(items)}
 
 

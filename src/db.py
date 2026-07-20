@@ -312,36 +312,48 @@ class Database:
     # ── 搜索 ──────────────────────────────────────────
 
     def fuzzy_search(self, keyword: str, limit: int = 20) -> list[dict]:
-        """按标题模糊搜索，返回匹配度最高的结果"""
-        # 使用 LIKE 做简单模糊匹配
-        words = keyword.strip().split()
-        if not words:
+        """模糊搜索 — 标题和作者，支持中英文部分匹配"""
+        keyword = keyword.strip()
+        if not keyword:
             return []
 
-        # 构建评分查询：每个词匹配加分
-        conditions = []
-        params = []
-        for w in words:
-            conditions.append(
-                f"(CASE WHEN title LIKE ? THEN 3 WHEN author LIKE ? THEN 1 ELSE 0 END)"
-            )
-            params.extend([f"%{w}%", f"%{w}%"])
+        # 分词：按空格拆分，中文逐字补充
+        words = keyword.split()
+        if len(words) == 1 and len(keyword) >= 2:
+            words = [keyword] + list(keyword)
 
-        score_expr = " + ".join(conditions)
+        # 构建评分表达式 (SELECT 部分)
+        score_parts = []
+        score_params = []
+        for w in words:
+            score_parts.append(
+                "CASE WHEN title LIKE ? COLLATE NOCASE THEN 5 "
+                "WHEN author LIKE ? COLLATE NOCASE THEN 2 ELSE 0 END"
+            )
+            score_params.extend([f"%{w}%", f"%{w}%"])
+        score_expr = " + ".join(score_parts)
+
+        # 构建 WHERE 子句
+        where_parts = []
+        where_params = []
+        for w in words:
+            where_parts.append("(title LIKE ? COLLATE NOCASE OR author LIKE ? COLLATE NOCASE)")
+            where_params.extend([f"%{w}%", f"%{w}%"])
+        where_str = " OR ".join(where_parts)
+
+        # 参数顺序：先 SELECT 中的 ?，再 WHERE 中的 ?
         query = f"""
             SELECT *, ({score_expr}) as score
             FROM items
-            WHERE status = 'separated'
-              AND ({" OR ".join(["title LIKE ?" for _ in words])})
-            ORDER BY score DESC
+            WHERE ({where_str})
+            ORDER BY score DESC, id ASC
             LIMIT ?
         """
-        params.extend([f"%{w}%" for w in words])
-        params.append(limit)
+        all_params = score_params + where_params + [limit]
 
         return [
             dict(row)
-            for row in self.conn.execute(query, params).fetchall()
+            for row in self.conn.execute(query, all_params).fetchall()
         ]
 
     def get_all_items(self, status_filter: str = "", limit: int = 100, offset: int = 0) -> list[dict]:
