@@ -292,8 +292,15 @@ async function refreshDashboard(){
 }
 setInterval(refreshDashboard,3000);refreshDashboard();
 
-const evt=new EventSource(API+'/progress/stream');
-evt.onmessage=function(e){try{const p=JSON.parse(e.data);['pending','downloaded','separated','failed'].forEach(s=>{const el=document.getElementById('s-'+s);if(el&&p.stats)el.textContent=p.stats[s]||0});document.getElementById('p-bar').style.width=(p.total?(p.completed/p.total*100):0)+'%';document.getElementById('p-title').textContent=p.title||'空闲';document.getElementById('p-count').textContent=p.completed+'/'+p.total;document.getElementById('p-eta').textContent=p.eta_seconds?`剩余 ~${Math.round(p.eta_seconds/60)}min`:'';document.getElementById('p-status').innerHTML=p.running?'🟢 运行中':'⚪ 空闲'}catch(e){}};
+// SSE — 容错重连
+let evt=null;
+function initSSE(){
+  if(evt)evt.close();
+  evt=new EventSource(API+'/progress/stream');
+  evt.onmessage=function(e){try{const p=JSON.parse(e.data);['pending','downloaded','separated','failed'].forEach(s=>{const el=document.getElementById('s-'+s);if(el&&p.stats)el.textContent=p.stats[s]||0});document.getElementById('p-bar').style.width=(p.total?(p.completed/p.total*100):0)+'%';document.getElementById('p-title').textContent=p.title||'空闲';document.getElementById('p-count').textContent=p.completed+'/'+p.total;document.getElementById('p-eta').textContent=p.eta_seconds?'剩余 ~'+Math.round(p.eta_seconds/60)+'min':'';document.getElementById('p-status').innerHTML=p.running?'RUNNING':'IDLE'}catch(e){}};
+  evt.onerror=function(){setTimeout(initSSE,5000)};
+}
+initSSE();
 
 async function startSeparation(){
   try{const r=await api('POST','/separate',{model:document.getElementById('sep-model').value,jobs:parseInt(document.getElementById('sep-jobs').value)});toast('已启动 '+r.total+' 首');refreshDashboard()}catch(e){toast(e.message,'er')}
