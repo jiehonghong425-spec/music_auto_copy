@@ -40,6 +40,7 @@ separation:
     model: htdemucs       # htdemucs(快,2子模型) | htdemucs_ft(慢,4子模型)
     device: auto           # auto(自动检测) | cpu | cuda | directml
     two_stems: true        # true=仅人声+伴奏 false=全部分离(鼓/贝斯/其他)
+    jobs: 4                # 并行线程数 (1-8)，CPU 推荐 4
     model_dir: ./models    # 模型缓存目录
     output_dir: ./separated  # 分离结果输出目录
 

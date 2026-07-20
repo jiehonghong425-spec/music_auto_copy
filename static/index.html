@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>音乐处理平台</title>
+<style>
+/* ── Reset & Vars ─────────────────────────────── */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0f1117; --bg2:#1a1d27; --bg3:#242836; --border:#2e3345;
+  --text:#e1e4ed; --dim:#8b90a0; --accent:#6c8cff; --accent2:#ff6b9d;
+  --green:#4ade80; --yellow:#facc15; --red:#f87171; --radius:8px;
+}
+body{font:14px/1.6 system-ui,sans-serif;background:var(--bg);color:var(--text);display:flex;min-height:100vh}
+/* ── Sidebar ──────────────────────────────────── */
+nav{width:200px;background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:16px 0;flex-shrink:0}
+nav .logo{font-size:18px;font-weight:700;padding:0 16px 20px;color:var(--accent)}
+nav a{display:flex;align-items:center;gap:8px;padding:10px 16px;color:var(--dim);text-decoration:none;transition:.15s;cursor:pointer;border-left:2px solid transparent;font-size:13px}
+nav a:hover,nav a.active{color:var(--text);background:var(--bg3);border-left-color:var(--accent)}
+nav .sep{flex:1}
+nav .ver{font-size:11px;color:var(--dim);padding:16px;text-align:center}
+/* ── Main ─────────────────────────────────────── */
+main{flex:1;overflow-y:auto;padding:24px 32px}
+.page{display:none}
+.page.active{display:block}
+h2{font-size:22px;margin-bottom:20px;font-weight:600}
+h3{font-size:15px;margin:16px 0 8px;color:var(--dim)}
+/* ── Cards ────────────────────────────────────── */
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:24px}
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:16px;text-align:center}
+.card .n{font-size:28px;font-weight:700}
+.card .l{font-size:11px;color:var(--dim);margin-top:4px}
+.card.green .n{color:var(--green)}
+.card.blue .n{color:var(--accent)}
+.card.yellow .n{color:var(--yellow)}
+.card.red .n{color:var(--red)}
+/* ── Progress ─────────────────────────────────── */
+.progress-box{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:20px;margin-bottom:16px}
+.progress-bar{height:8px;background:var(--bg3);border-radius:4px;overflow:hidden;margin:12px 0}
+.progress-fill{height:100%;background:var(--accent);border-radius:4px;transition:width .5s}
+.progress-info{display:flex;justify-content:space-between;font-size:12px;color:var(--dim)}
+.progress-info .title{color:var(--text)}
+/* ── Buttons ──────────────────────────────────── */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg3);color:var(--text);cursor:pointer;font-size:13px;transition:.15s;white-space:nowrap}
+.btn:hover{background:var(--border)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.primary:hover{filter:brightness(1.1)}
+.btn.danger{background:var(--red);border-color:var(--red);color:#fff}
+.btn.sm{padding:4px 10px;font-size:12px}
+.btn-row{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
+/* ── Table ────────────────────────────────────── */
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:10px 12px;text-align:left;border-bottom:1px solid var(--border)}
+th{color:var(--dim);font-weight:500;font-size:11px;text-transform:uppercase}
+tr:hover td{background:var(--bg2)}
+td .status{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px}
+.status.downloaded{background:#1e3a5f;color:var(--accent)}
+.status.separated{background:#1a3a2a;color:var(--green)}
+.status.failed{background:#3a1a1a;color:var(--red)}
+.status.separating{background:#3a2a1a;color:var(--yellow)}
+/* ── Forms ────────────────────────────────────── */
+input,select,textarea{width:100%;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:13px;outline:none}
+input:focus,select:focus{border-color:var(--accent)}
+.form-group{margin-bottom:12px}
+.form-group label{display:block;font-size:12px;color:var(--dim);margin-bottom:4px}
+.form-row{display:flex;gap:12px}
+.form-row>*{flex:1}
+/* ── Upload Zone ──────────────────────────────── */
+.upload-zone{border:2px dashed var(--border);border-radius:var(--radius);padding:48px;text-align:center;transition:.2s;cursor:pointer;margin-bottom:16px}
+.upload-zone:hover,.upload-zone.dragover{border-color:var(--accent);background:var(--bg2)}
+.upload-zone .icon{font-size:40px;margin-bottom:12px}
+.upload-zone p{color:var(--dim);font-size:13px}
+.upload-zone .formats{font-size:11px;color:var(--dim);margin-top:8px}
+/* ── Search ───────────────────────────────────── */
+.search-box{position:relative;max-width:500px;margin-bottom:16px}
+.search-box input{padding-left:36px}
+.search-box .icon{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--dim)}
+.search-result{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:12px}
+.search-result .info{flex:1;min-width:0}
+.search-result .title{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.search-result .meta{font-size:11px;color:var(--dim)}
+.search-result .actions{display:flex;gap:6px;flex-shrink:0}
+/* ── Toast ────────────────────────────────────── */
+.toasts{position:fixed;top:20px;right:20px;z-index:999;display:flex;flex-direction:column;gap:8px}
+.toast{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:12px 16px;font-size:13px;animation:slideIn .3s;max-width:340px}
+.toast.success{border-color:var(--green)}
+.toast.error{border-color:var(--red)}
+@keyframes slideIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}
+/* ── Modal ────────────────────────────────────── */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:99;display:flex;align-items:center;justify-content:center}
+.modal{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:24px;min-width:360px;max-width:500px}
+.modal h3{margin-top:0}
+/* ── Misc ─────────────────────────────────────── */
+.path-text{font-family:monospace;font-size:12px;background:var(--bg);padding:4px 8px;border-radius:4px;word-break:break-all}
+.slider-row{display:flex;align-items:center;gap:12px}
+.slider-row input[type=range]{flex:1}
+.slider-row .val{min-width:36px;text-align:center;font-weight:600}
+.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;background:var(--bg3)}
+</style>
+</head>
+<body>
+
+<!-- ── Sidebar ──────────────────────────────── -->
+<nav>
+  <div class="logo">🎵 音乐处理平台</div>
+  <a data-page="dashboard" class="active" onclick="navTo('dashboard')">📊 仪表盘</a>
+  <a data-page="sources" onclick="navTo('sources')">🌐 音频源</a>
+  <a data-page="files" onclick="navTo('files')">📁 文件管理</a>
+  <a data-page="search" onclick="navTo('search')">🔍 音频搜索</a>
+  <a data-page="upload" onclick="navTo('upload')">📤 上传文件</a>
+  <a data-page="settings" onclick="navTo('settings')">⚙️ 设置</a>
+  <div class="sep"></div>
+  <div class="ver" id="ver">v2.0</div>
+</nav>
+
+<!-- ── Toast Container ───────────────────────── -->
+<div class="toasts" id="toasts"></div>
+
+<!-- ── Main Content ──────────────────────────── -->
+<main>
+
+<!-- Dashboard -->
+<div id="page-dashboard" class="page active">
+  <h2>仪表盘</h2>
+  <div class="cards" id="stat-cards">
+    <div class="card yellow"><div class="n" id="s-pending">0</div><div class="l">待处理</div></div>
+    <div class="card blue"><div class="n" id="s-downloaded">0</div><div class="l">已下载</div></div>
+    <div class="card green"><div class="n" id="s-separated">0</div><div class="l">已分离</div></div>
+    <div class="card red"><div class="n" id="s-failed">0</div><div class="l">失败</div></div>
+  </div>
+
+  <div class="progress-box">
+    <h3 style="margin-top:0">分离进度 <span id="p-status" style="color:var(--dim)">— 空闲</span></h3>
+    <div class="progress-bar"><div class="progress-fill" id="p-bar" style="width:0%"></div></div>
+    <div class="progress-info">
+      <span class="title" id="p-title">等待开始...</span>
+      <span id="p-eta"></span>
+    </div>
+    <div class="progress-info" style="margin-top:4px">
+      <span id="p-count">0/0</span>
+      <span id="p-completed"></span>
+    </div>
+  </div>
+
+  <div class="btn-row">
+    <button class="btn primary" onclick="startSeparation()">▶ 开始分离</button>
+    <button class="btn danger" onclick="stopSeparation()">⏹ 停止</button>
+    <select id="sep-model" style="width:auto">
+      <option value="htdemucs">htdemucs (快)</option>
+      <option value="htdemucs_ft">htdemucs_ft (高质量)</option>
+      <option value="mdx_extra">mdx_extra</option>
+    </select>
+    <select id="sep-jobs" style="width:auto">
+      <option value="1">单线程</option>
+      <option value="2">2 线程</option>
+      <option value="4" selected>4 线程</option>
+      <option value="8">8 线程</option>
+    </select>
+  </div>
+</div>
+
+<!-- Audio Sources -->
+<div id="page-sources" class="page">
+  <h2>音频源管理</h2>
+  <div class="btn-row">
+    <button class="btn primary" onclick="showAddSite()">+ 添加站点</button>
+    <button class="btn" onclick="loadSites()">🔄 刷新</button>
+  </div>
+  <table><thead><tr><th>名称</th><th>URL</th><th>类型</th><th>状态</th><th>操作</th></tr></thead>
+    <tbody id="sites-tbody"></tbody>
+  </table>
+
+  <h3>搜索参数</h3>
+  <div class="form-row">
+    <div class="form-group"><label>站点</label><select id="search-site"></select></div>
+    <div class="form-group"><label>最高价格 ($)</label><input id="search-price" type="number" value="19"></div>
+    <div class="form-group"><label>最大数量</label><input id="search-max" type="number" value="20" placeholder="0=不限"></div>
+  </div>
+  <div class="form-row">
+    <div class="form-group"><label>标签 (逗号分隔)</label><input id="search-tags" placeholder="corporate,inspiring"></div>
+    <div class="form-group"><label>排序</label><select id="search-sort"><option value="date">日期</option><option value="sales">销量</option><option value="rating">评分</option><option value="price">价格</option></select></div>
+  </div>
+  <div class="btn-row">
+    <button class="btn primary" onclick="searchAudio()">🔍 搜索</button>
+    <button class="btn" onclick="downloadSelected()">📥 下载选中</button>
+  </div>
+  <div id="search-results"></div>
+</div>
+
+<!-- Files -->
+<div id="page-files" class="page">
+  <h2>文件管理</h2>
+  <div class="form-row" style="margin-bottom:16px">
+    <select id="file-filter" onchange="loadFiles()" style="width:auto">
+      <option value="">全部</option>
+      <option value="downloaded">已下载</option>
+      <option value="separated">已分离</option>
+      <option value="failed">失败</option>
+    </select>
+    <button class="btn" onclick="loadFiles()">🔄 刷新</button>
+  </div>
+  <div style="overflow-x:auto">
+  <table><thead><tr><th>ID</th><th>标题</th><th>作者</th><th>状态</th><th>大小</th><th>操作</th></tr></thead>
+    <tbody id="files-tbody"></tbody>
+  </table>
+  </div>
+</div>
+
+<!-- Search -->
+<div id="page-search" class="page">
+  <h2>音频搜索</h2>
+  <div class="search-box">
+    <span class="icon">🔍</span>
+    <input id="audio-search-input" placeholder="输入关键词搜索已分离的音频..." onkeyup="if(event.key==='Enter')doAudioSearch()">
+  </div>
+  <div id="audio-search-results"></div>
+</div>
+
+<!-- Upload -->
+<div id="page-upload" class="page">
+  <h2>上传文件</h2>
+  <div class="upload-zone" id="upload-zone" onclick="document.getElementById('file-input').click()">
+    <div class="icon">📤</div>
+    <p>点击或拖拽文件到此处上传</p>
+    <div class="formats">支持: mp3, wav, flac, ogg, m4a, aac | mp4, avi, mov, mkv, webm<br>视频文件将自动提取音频</div>
+  </div>
+  <input type="file" id="file-input" multiple hidden accept="audio/*,video/*" onchange="uploadFiles(this.files)">
+  <div class="btn-row">
+    <button class="btn primary" onclick="document.getElementById('file-input').click()">选择文件</button>
+  </div>
+  <div id="upload-results"></div>
+</div>
+
+<!-- Settings -->
+<div id="page-settings" class="page">
+  <h2>设置</h2>
+  <div class="form-row">
+    <div class="form-group"><label>模型</label><select id="cfg-model"><option value="htdemucs">htdemucs (快, 2子模型)</option><option value="htdemucs_ft">htdemucs_ft (慢, 4子模型)</option><option value="mdx_extra">mdx_extra</option></select></div>
+    <div class="form-group"><label>并行线程</label><div class="slider-row"><input type="range" id="cfg-jobs" min="1" max="8" value="4" oninput="this.nextElementSibling.textContent=this.value"><span class="val">4</span></div></div>
+  </div>
+  <div class="form-row">
+    <div class="form-group"><label>下载并发数</label><input id="cfg-concurrency" type="number" value="5"></div>
+    <div class="form-group"><label>设备</label><select id="cfg-device"><option value="auto">自动检测</option><option value="cpu">CPU</option><option value="cuda">CUDA</option><option value="directml">DirectML</option></select></div>
+  </div>
+  <div class="form-group"><label>输出目录</label><input id="cfg-output" value="./separated"></div>
+  <button class="btn primary" onclick="saveSettings()">💾 保存设置</button>
+</div>
+
+</main>
+
+<!-- Add Site Modal -->
+<div id="modal-overlay" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <h3>添加站点</h3>
+    <div class="form-group"><label>站点名称</label><input id="site-name" placeholder="例: AudioJungle"></div>
+    <div class="form-group"><label>URL</label><input id="site-url" placeholder="https://audiojungle.net"></div>
+    <div class="form-group"><label>类型</label><select id="site-type"><option value="audiojungle">AudioJungle</option><option value="custom">自定义</option></select></div>
+    <div class="btn-row" style="justify-content:flex-end">
+      <button class="btn" onclick="closeModal()">取消</button>
+      <button class="btn primary" onclick="addSite()">确定</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Navigation ────────────────────────────────────────
+function navTo(page){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('nav a').forEach(a=>a.classList.remove('active'));
+  document.getElementById('page-'+page).classList.add('active');
+  document.querySelector(`[data-page="${page}"]`).classList.add('active');
+  if(page==='dashboard') refreshDashboard();
+  if(page==='sources') loadSites();
+  if(page==='files') loadFiles();
+}
+
+// ── Toast ─────────────────────────────────────────────
+function toast(msg,type='success'){
+  const el=document.createElement('div');
+  el.className='toast '+type;
+  el.textContent=msg;
+  document.getElementById('toasts').appendChild(el);
+  setTimeout(()=>{el.style.opacity='0';setTimeout(()=>el.remove(),300)},3000);
+}
+
+// ── API Helpers ───────────────────────────────────────
+const API='/api';
+async function api(method,url,body){
+  const opts={method,headers:{}};
+  if(body){opts.headers['Content-Type']='application/json';opts.body=JSON.stringify(body)}
+  const r=await fetch(API+url,opts);
+  if(!r.ok){const e=await r.text();throw new Error(e)}
+  return r.json();
+}
+
+// ── Dashboard ─────────────────────────────────────────
+async function refreshDashboard(){
+  try{
+    const p=await api('GET','/progress');
+    ['pending','downloaded','separated','failed'].forEach(s=>{
+      const el=document.getElementById('s-'+s);
+      if(el)el.textContent=p.stats[s]||0;
+    });
+    document.getElementById('p-bar').style.width=p.total?(p.completed/p.total*100)+'%':'0%';
+    document.getElementById('p-title').textContent=p.title||'空闲';
+    document.getElementById('p-count').textContent=p.completed+'/'+p.total;
+    document.getElementById('p-eta').textContent=p.eta_seconds?`预计剩余 ${Math.round(p.eta_seconds/60)} 分钟`:'';
+    document.getElementById('p-completed').textContent=p.running?'运行中...':'空闲';
+    document.getElementById('p-status').textContent=p.running?'🟢 运行中':'⚪ 空闲';
+  }catch(e){console.error(e)}
+}
+setInterval(refreshDashboard,3000);
+refreshDashboard();
+
+// SSE 实时进度
+const evtSource=new EventSource(API+'/progress/stream');
+evtSource.onmessage=function(e){
+  try{
+    const p=JSON.parse(e.data);
+    document.getElementById('p-bar').style.width=p.total?(p.completed/p.total*100)+'%':'0%';
+    document.getElementById('p-title').textContent=p.title||'空闲';
+    document.getElementById('p-count').textContent=p.completed+'/'+p.total;
+    document.getElementById('p-eta').textContent=p.eta_seconds?`预计剩余 ${Math.round(p.eta_seconds/60)} 分钟`:'';
+    ['pending','downloaded','separated','failed'].forEach(s=>{
+      const el=document.getElementById('s-'+s);
+      if(el && p.stats)el.textContent=p.stats[s]||0;
+    });
+    document.getElementById('p-status').textContent=p.running?'🟢 运行中':'⚪ 空闲';
+    document.getElementById('p-completed').textContent=p.running?'运行中...':'空闲';
+  }catch(e){}
+};
+
+async function startSeparation(){
+  try{
+    const r=await api('POST','/separate',{
+      model:document.getElementById('sep-model').value,
+      jobs:parseInt(document.getElementById('sep-jobs').value),
+    });
+    toast(`已启动，共 ${r.total} 首`);
+    refreshDashboard();
+  }catch(e){toast('启动失败: '+e.message,'error')}
+}
+async function stopSeparation(){
+  try{await api('POST','/separate/stop');toast('已发送停止信号');refreshDashboard()}
+  catch(e){toast('停止失败','error')}
+}
+
+// ── Sites ────────────────────────────────────────────
+async function loadSites(){
+  try{
+    const sites=await api('GET','/sites');
+    const tbody=document.getElementById('sites-tbody');
+    const sel=document.getElementById('search-site');
+    tbody.innerHTML=''; sel.innerHTML='';
+    sites.forEach(s=>{
+      tbody.innerHTML+=`<tr><td>${s.name}</td><td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${s.url}</td><td>${s.scraper_type}</td><td>${s.enabled?'✅ 启用':'❌ 禁用'}</td><td><button class="btn sm danger" onclick="deleteSite(${s.id})">删除</button></td></tr>`;
+      sel.innerHTML+=`<option value="${s.id}">${s.name}</option>`;
+    });
+  }catch(e){toast('加载失败','error')}
+}
+function showAddSite(){document.getElementById('modal-overlay').style.display='flex'}
+function closeModal(){document.getElementById('modal-overlay').style.display='none'}
+async function addSite(){
+  try{
+    await api('POST','/sites',{
+      name:document.getElementById('site-name').value,
+      url:document.getElementById('site-url').value,
+      scraper_type:document.getElementById('site-type').value,
+    });
+    closeModal(); loadSites(); toast('站点已添加');
+  }catch(e){toast('添加失败: '+e.message,'error')}
+}
+async function deleteSite(id){
+  if(!confirm('确定删除此站点?'))return;
+  try{await api('DELETE','/sites/'+id);loadSites();toast('已删除')}
+  catch(e){toast('删除失败','error')}
+}
+
+// ── Search ───────────────────────────────────────────
+let searchResults=[];
+async function searchAudio(){
+  try{
+    const siteId=parseInt(document.getElementById('search-site').value);
+    const r=await api('POST','/search',{
+      site_id:siteId,
+      price_max:parseInt(document.getElementById('search-price').value)||19,
+      sort:document.getElementById('search-sort').value,
+      tags:document.getElementById('search-tags').value,
+      max_items:parseInt(document.getElementById('search-max').value)||0,
+    });
+    searchResults=r.items;
+    const div=document.getElementById('search-results');
+    div.innerHTML=`<h3>搜索结果 (${r.count} 首)</h3>`;
+    r.items.forEach(item=>{
+      div.innerHTML+=`<div class="search-result"><div class="info"><div class="title">${item.title}</div><div class="meta">${item.author||''} · $${item.price||0} · ${item.length||''}</div></div><div class="actions"><button class="btn sm primary" onclick="downloadSingle(${item.id})">下载</button></div></div>`;
+    });
+  }catch(e){toast('搜索失败: '+e.message,'error')}
+}
+async function downloadSingle(id){
+  try{await api('POST','/download',{item_ids:[id]});toast('下载完成');loadFiles()}
+  catch(e){toast('下载失败: '+e.message,'error')}
+}
+async function downloadSelected(){
+  const ids=searchResults.filter(()=>confirm('下载此项?')).map(i=>i.id);
+  if(!ids.length)return;
+  try{const r=await api('POST','/download',{item_ids:ids});toast(`已下载 ${r.downloaded} 首`)}
+  catch(e){toast('下载失败: '+e.message,'error')}
+}
+
+// ── Files ────────────────────────────────────────────
+async function loadFiles(){
+  try{
+    const filter=document.getElementById('file-filter')?.value||'';
+    const r=await api('GET','/files?status='+filter);
+    const tbody=document.getElementById('files-tbody');
+    tbody.innerHTML='';
+    r.items.forEach(item=>{
+      const paths=[];
+      if(item.download_path)paths.push('download');
+      if(item.instrumental_path)paths.push('inst');
+      if(item.vocals_path)paths.push('voc');
+      tbody.innerHTML+=`<tr>
+        <td style="color:var(--dim)">${item.id}</td>
+        <td>${(item.title||'').substring(0,50)}</td>
+        <td>${item.author||''}</td>
+        <td><span class="status ${item.status}">${item.status}</span></td>
+        <td style="color:var(--dim)">${paths.join('+')}</td>
+        <td style="display:flex;gap:4px">
+          ${item.instrumental_path?`<button class="btn sm" onclick="copyPath(${item.id},'instrumental')">📋 伴奏</button>`:''}
+          ${item.vocals_path?`<button class="btn sm" onclick="copyPath(${item.id},'vocals')">🎤 人声</button>`:''}
+          ${item.download_path?`<button class="btn sm" onclick="copyPath(${item.id},'download')">📁 源文件</button>`:''}
+        </td></tr>`;
+    });
+  }catch(e){toast('加载文件列表失败','error')}
+}
+async function copyPath(itemId,stem){
+  try{
+    const r=await api('POST','/files/'+itemId+'/copy?stem='+stem);
+    await navigator.clipboard.writeText(r.path);
+    toast('已复制: '+r.path);
+  }catch(e){
+    // Fallback: show path in prompt
+    try{
+      const r=await api('POST','/files/'+itemId+'/copy?stem='+stem);
+      prompt('复制此路径 (Ctrl+C):',r.path);
+    }catch(e2){toast('复制失败','error')}
+  }
+}
+
+// ── Audio Search ──────────────────────────────────────
+async function doAudioSearch(){
+  const q=document.getElementById('audio-search-input').value.trim();
+  if(!q)return;
+  try{
+    const r=await api('GET','/search-audio?q='+encodeURIComponent(q));
+    const div=document.getElementById('audio-search-results');
+    div.innerHTML=`<h3>找到 ${r.count} 个结果</h3>`;
+    r.results.forEach(item=>{
+      div.innerHTML+=`<div class="search-result"><div class="info"><div class="title">${item.title}</div><div class="meta">${item.author||''} · 匹配度: ${item.score}</div></div><div class="actions">${item.instrumental_path?`<button class="btn sm" onclick="copyPath(${item.id},'instrumental')">📋 伴奏</button>`:''}${item.vocals_path?`<button class="btn sm" onclick="copyPath(${item.id},'vocals')">🎤 人声</button>`:''}</div></div>`;
+    });
+  }catch(e){toast('搜索失败: '+e.message,'error')}
+}
+
+// ── Upload ────────────────────────────────────────────
+const uploadZone=document.getElementById('upload-zone');
+if(uploadZone){
+  uploadZone.addEventListener('dragover',e=>{e.preventDefault();uploadZone.classList.add('dragover')});
+  uploadZone.addEventListener('dragleave',()=>uploadZone.classList.remove('dragover'));
+  uploadZone.addEventListener('drop',e=>{e.preventDefault();uploadZone.classList.remove('dragover');uploadFiles(e.dataTransfer.files)});
+}
+async function uploadFiles(files){
+  if(!files.length)return;
+  const form=new FormData();
+  for(const f of files)form.append('files',f);
+  try{
+    const r=await fetch(API+'/upload',{method:'POST',body:form});
+    const data=await r.json();
+    const div=document.getElementById('upload-results');
+    div.innerHTML='<h3>上传结果</h3>';
+    data.results.forEach(r=>{
+      div.innerHTML+=`<div class="search-result"><div class="info"><div class="title">${r.name}</div><div class="meta">${r.ok?`✅ 成功 (${(r.size/1024/1024).toFixed(1)}MB, ${r.type})`:r.error}</div></div>${r.ok?`<button class="btn sm primary" onclick="startSingleSeparation(${r.item_id})">分离此文件</button>`:''}</div>`;
+    });
+    toast(`已上传 ${data.results.filter(r=>r.ok).length}/${data.count} 个文件`);
+    loadFiles();
+  }catch(e){toast('上传失败: '+e.message,'error')}
+}
+async function startSingleSeparation(itemId){
+  try{await api('POST','/separate',{item_ids:[itemId]});toast('已开始分离');refreshDashboard()}
+  catch(e){toast('分离失败: '+e.message,'error')}
+}
+
+// ── Settings ──────────────────────────────────────────
+async function saveSettings(){
+  try{
+    await api('PUT','/config',{
+      model:document.getElementById('cfg-model').value,
+      jobs:parseInt(document.getElementById('cfg-jobs').value),
+      concurrency:parseInt(document.getElementById('cfg-concurrency').value),
+      device:document.getElementById('cfg-device').value,
+      output_dir:document.getElementById('cfg-output').value,
+    });
+    toast('设置已保存');
+  }catch(e){toast('保存失败: '+e.message,'error')}
+}
+
+// Load settings on page load
+async function loadSettings(){
+  try{
+    const c=await api('GET','/config');
+    document.getElementById('cfg-model').value=c.model||'htdemucs';
+    document.getElementById('cfg-jobs').value=c.jobs||4;
+    document.getElementById('cfg-jobs').nextElementSibling.textContent=c.jobs||4;
+    document.getElementById('cfg-concurrency').value=c.concurrency||5;
+    document.getElementById('cfg-device').value=c.device||'auto';
+    document.getElementById('cfg-output').value=c.output_dir||'./separated';
+    document.getElementById('sep-model').value=c.model||'htdemucs';
+    document.getElementById('sep-jobs').value=c.jobs||4;
+  }catch(e){}
+}
+loadSettings();
+</script>
+</body>
+</html>

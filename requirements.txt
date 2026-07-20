@@ -6,11 +6,16 @@ pyyaml>=6.0.0
 rich>=13.7.0
 aiofiles>=23.2.0
 
+# === Web 服务 ===
+fastapi>=0.115.0
+uvicorn>=0.30.0
+python-multipart>=0.0.12
+
 # === 人声分离 ===
 # Demucs v4 (Meta AI) — 已验证支持 Python 3.14
 demucs
 
 # === 系统依赖 ===
-# FFmpeg（必须！Demucs 需要 FFmpeg 解码部分 MP3 文件）
+# FFmpeg（必须！Demucs 需要 FFmpeg 解码部分 MP3 文件，视频提取音频也需要）
 #   Windows: winget install Gyan.FFmpeg
 #   其他方式: https://ffmpeg.org/download.html

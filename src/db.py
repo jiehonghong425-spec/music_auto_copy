@@ -31,6 +31,28 @@ CREATE TABLE IF NOT EXISTS pipeline_state (
     key TEXT PRIMARY KEY,
     value TEXT
 );
+
+CREATE TABLE IF NOT EXISTS sites (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    url TEXT NOT NULL,
+    scraper_type TEXT DEFAULT 'audiojungle',
+    enabled INTEGER DEFAULT 1,
+    config TEXT DEFAULT '{}',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS uploaded_files (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    original_name TEXT NOT NULL,
+    stored_path TEXT NOT NULL,
+    file_type TEXT DEFAULT 'audio',
+    size INTEGER DEFAULT 0,
+    status TEXT DEFAULT 'pending',
+    item_id INTEGER,
+    created_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (item_id) REFERENCES items(id)
+);
 """
 
 
@@ -158,6 +180,29 @@ class Database:
         ).fetchone()
         return row is not None
 
+    def insert_uploaded_item(self, title: str, author: str = "", file_path: str = "") -> int:
+        """插入上传的文件项目（自动生成负数 ID 避免与抓取 ID 冲突）"""
+        # 找最小可用负数 ID
+        row = self.conn.execute(
+            "SELECT MIN(id) as min_id FROM items WHERE id < 0"
+        ).fetchone()
+        new_id = (row["min_id"] or 0) - 1
+
+        self.conn.execute(
+            """INSERT INTO items (id, title, author, download_path, status)
+               VALUES (?, ?, ?, ?, 'downloaded')""",
+            (new_id, title, author, file_path),
+        )
+        self.conn.commit()
+        return new_id
+
+    def get_item(self, item_id: int) -> dict | None:
+        """获取单个项目"""
+        row = self.conn.execute(
+            "SELECT * FROM items WHERE id = ?", (item_id,)
+        ).fetchone()
+        return dict(row) if row else None
+
     # ── 统计 ───────────────────────────────────────────
 
     def get_stats(self) -> dict:
@@ -193,3 +238,126 @@ class Database:
                WHERE status IN ('downloading', 'separating')"""
         )
         self.conn.commit()
+
+    # ── 站点管理 ──────────────────────────────────────
+
+    def add_site(self, name: str, url: str, scraper_type: str = "audiojungle", config: dict | None = None) -> int:
+        """添加爬虫站点，返回新 ID"""
+        cur = self.conn.execute(
+            """INSERT INTO sites (name, url, scraper_type, config)
+               VALUES (?, ?, ?, ?)""",
+            (name, url, scraper_type, json.dumps(config or {})),
+        )
+        self.conn.commit()
+        return cur.lastrowid
+
+    def list_sites(self) -> list[dict]:
+        """列出所有站点"""
+        return [
+            dict(row)
+            for row in self.conn.execute(
+                "SELECT * FROM sites ORDER BY id"
+            ).fetchall()
+        ]
+
+    def delete_site(self, site_id: int) -> bool:
+        """删除站点"""
+        self.conn.execute("DELETE FROM sites WHERE id = ?", (site_id,))
+        self.conn.commit()
+        return self.conn.total_changes > 0
+
+    def update_site(self, site_id: int, **kwargs):
+        """更新站点字段"""
+        allowed = {"name", "url", "scraper_type", "enabled", "config"}
+        updates = {k: v for k, v in kwargs.items() if k in allowed}
+        if not updates:
+            return
+        if "config" in updates and isinstance(updates["config"], dict):
+            updates["config"] = json.dumps(updates["config"])
+        set_clause = ", ".join(f"{k} = ?" for k in updates)
+        values = list(updates.values()) + [site_id]
+        self.conn.execute(f"UPDATE sites SET {set_clause} WHERE id = ?", values)
+        self.conn.commit()
+
+    # ── 上传文件管理 ──────────────────────────────────
+
+    def add_uploaded_file(self, original_name: str, stored_path: str, file_type: str = "audio", size: int = 0, item_id: int | None = None) -> int:
+        """记录上传文件，返回 ID"""
+        cur = self.conn.execute(
+            """INSERT INTO uploaded_files (original_name, stored_path, file_type, size, item_id)
+               VALUES (?, ?, ?, ?, ?)""",
+            (original_name, stored_path, file_type, size, item_id),
+        )
+        self.conn.commit()
+        return cur.lastrowid
+
+    def get_uploaded_files(self, limit: int = 50) -> list[dict]:
+        """获取上传文件列表"""
+        return [
+            dict(row)
+            for row in self.conn.execute(
+                "SELECT * FROM uploaded_files ORDER BY created_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        ]
+
+    def update_uploaded_status(self, upload_id: int, status: str):
+        """更新上传文件状态"""
+        self.conn.execute(
+            "UPDATE uploaded_files SET status = ? WHERE id = ?",
+            (status, upload_id),
+        )
+        self.conn.commit()
+
+    # ── 搜索 ──────────────────────────────────────────
+
+    def fuzzy_search(self, keyword: str, limit: int = 20) -> list[dict]:
+        """按标题模糊搜索，返回匹配度最高的结果"""
+        # 使用 LIKE 做简单模糊匹配
+        words = keyword.strip().split()
+        if not words:
+            return []
+
+        # 构建评分查询：每个词匹配加分
+        conditions = []
+        params = []
+        for w in words:
+            conditions.append(
+                f"(CASE WHEN title LIKE ? THEN 3 WHEN author LIKE ? THEN 1 ELSE 0 END)"
+            )
+            params.extend([f"%{w}%", f"%{w}%"])
+
+        score_expr = " + ".join(conditions)
+        query = f"""
+            SELECT *, ({score_expr}) as score
+            FROM items
+            WHERE status = 'separated'
+              AND ({" OR ".join(["title LIKE ?" for _ in words])})
+            ORDER BY score DESC
+            LIMIT ?
+        """
+        params.extend([f"%{w}%" for w in words])
+        params.append(limit)
+
+        return [
+            dict(row)
+            for row in self.conn.execute(query, params).fetchall()
+        ]
+
+    def get_all_items(self, status_filter: str = "", limit: int = 100, offset: int = 0) -> list[dict]:
+        """获取所有项目，可按状态筛选"""
+        if status_filter:
+            return [
+                dict(row)
+                for row in self.conn.execute(
+                    "SELECT * FROM items WHERE status = ? ORDER BY id DESC LIMIT ? OFFSET ?",
+                    (status_filter, limit, offset),
+                ).fetchall()
+            ]
+        return [
+            dict(row)
+            for row in self.conn.execute(
+                "SELECT * FROM items ORDER BY id DESC LIMIT ? OFFSET ?",
+                (limit, offset),
+            ).fetchall()
+        ]

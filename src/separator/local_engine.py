@@ -265,8 +265,9 @@ class LocalSeparationEngine:
         # 设备选择
         if self._device == "cpu":
             cmd.extend(["-d", "cpu"])
-            # CPU 模式下利用多核
-            cmd.extend(["-j", "4"])
+            # CPU 模式下利用多核，jobs 数可配置
+            jobs = getattr(self.config, "jobs", 4)
+            cmd.extend(["-j", str(jobs)])
         # cuda 是默认值，无需指定
 
         cmd.append(input_path)

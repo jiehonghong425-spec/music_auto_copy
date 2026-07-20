@@ -49,9 +49,10 @@ class DownloadConfig(BaseModel):
 
 class LocalSepConfig(BaseModel):
     """本地人声分离配置"""
-    model: str = "htdemucs_ft"  # htdemucs_ft | mdx_extra | vr
+    model: str = "htdemucs"  # htdemucs(快) | htdemucs_ft(慢) | mdx_extra
     device: Literal["auto", "cpu", "cuda", "directml"] = "auto"
     two_stems: bool = True  # True = 仅人声+伴奏; False = 鼓/贝斯等全部分离
+    jobs: int = 4  # 并行线程数 (1-8)
     model_dir: Path = Path("./models")
     output_dir: Path = Path("./separated")
 
