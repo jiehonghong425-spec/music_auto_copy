@@ -584,7 +584,7 @@ async def get_file(item_id: int):
 
 @app.post("/api/files/{item_id}/copy")
 async def copy_file(item_id: int, stem: str = "instrumental"):
-    """获取文件路径以便复制（返回绝对路径）"""
+    """复制文件路径（返回绝对路径供后续操作）"""
     item = db.get_item(item_id)
     if not item:
         raise HTTPException(404, "文件不存在")
@@ -595,6 +595,22 @@ async def copy_file(item_id: int, stem: str = "instrumental"):
         raise HTTPException(404, f"文件不存在: {stem}")
 
     return {"path": str(Path(file_path).resolve()), "stem": stem, "title": item["title"]}
+
+
+@app.get("/api/files/{item_id}/download")
+async def download_file(item_id: int, stem: str = "instrumental"):
+    """直接下载 WAV 文件"""
+    item = db.get_item(item_id)
+    if not item:
+        raise HTTPException(404, "文件不存在")
+
+    path_key = "instrumental_path" if stem == "instrumental" else "vocals_path"
+    file_path = item.get(path_key, "")
+    if not file_path or not Path(file_path).exists():
+        raise HTTPException(404, f"文件不存在: {stem}")
+
+    filename = f"{item['title']}_{stem}.wav"
+    return FileResponse(str(file_path), filename=filename, media_type="audio/wav")
 
 
 # ── 音频搜索 ──────────────────────────────────────────────

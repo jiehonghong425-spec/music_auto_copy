@@ -360,8 +360,8 @@ function tabActions(i){
     return `<button class="btn sm p" onclick="startSepOne(${i.id})">分离</button>`;
   }else if(t==='separated'){
     let btns='';
-    if(i.instrumental_path)btns+=`<button class="btn sm" onclick="copyPath(${i.id},'instrumental')">📋 伴奏</button> `;
-    if(i.vocals_path)btns+=`<button class="btn sm" onclick="copyPath(${i.id},'vocals')">🎤 人声</button>`;
+    if(i.instrumental_path)btns+=`<a href="${API}/files/${i.id}/download?stem=instrumental" class="btn sm" download>COPY 伴奏</a> `;
+    if(i.vocals_path)btns+=`<a href="${API}/files/${i.id}/download?stem=vocals" class="btn sm" download>COPY 人声</a>`;
     return btns||'—';
   }else if(t==='failed'){
     return `<button class="btn sm" onclick="startSepOne(${i.id})">🔄 重试</button>`;
@@ -441,9 +441,9 @@ async function loadFiles(){
   try{const f=document.getElementById('file-filter')?.value||'';const r=await api('GET','/files?status='+f);
   document.getElementById('files-tbody').innerHTML=r.items.map(i=>{
     let btns='';
-    if(i.instrumental_path)btns+=`<button class="btn sm" onclick="copyPath(${i.id},'instrumental')">📋 伴奏</button> `;
-    if(i.vocals_path)btns+=`<button class="btn sm" onclick="copyPath(${i.id},'vocals')">🎤 人声</button> `;
-    if(i.download_path)btns+=`<button class="btn sm" onclick="copyPath(${i.id},'download')">📁 源文件</button>`;
+    if(i.instrumental_path)btns+=`<a href="${API}/files/${i.id}/download?stem=instrumental" class="btn sm" download>COPY 伴奏</a> `;
+    if(i.vocals_path)btns+=`<a href="${API}/files/${i.id}/download?stem=vocals" class="btn sm" download>COPY 人声</a> `;
+    if(i.download_path)btns+=`<a href="${API}/files/${i.id}/download?stem=download" class="btn sm" download>COPY 源文件</a>`;
     const st=i.status,sc=st==='separated'?'ok':st==='downloaded'?'info':st==='failed'?'err':'warn';
     return`<tr><td>${(i.title||'').substring(0,60)}</td><td>${i.author||''}</td><td><span class="tag ${sc}">${st}</span></td><td style="display:flex;gap:6px">${btns||'—'}</td></tr>`;
   }).join('')}catch(e){}
