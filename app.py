@@ -16,6 +16,7 @@ from typing import Optional
 os.environ.setdefault("PYTHONIOENCODING", "utf-8")
 
 import aiofiles
+import httpx
 from fastapi import FastAPI, UploadFile, File, Query, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -96,10 +97,17 @@ async def lifespan(app: FastAPI):
     ]:
         if Path(d).exists() and d not in os.environ.get("PATH", ""):
             os.environ["PATH"] = d + os.pathsep + os.environ.get("PATH", "")
-    # 插入默认站点
-    existing = db.list_sites()
-    if not existing:
-        db.add_site("AudioJungle", "https://audiojungle.net", "audiojungle")
+    # 插入默认站点（按 scraper_type 去重）
+    existing_types = {s["scraper_type"] for s in db.list_sites()}
+    defaults = [
+        ("AudioJungle (国外)", "https://audiojungle.net", "audiojungle"),
+        ("网易云音乐", "https://music.163.com", "netease"),
+        ("QQ音乐", "https://y.qq.com", "qqmusic"),
+        ("酷狗音乐", "http://www.kugou.com", "kugou"),
+    ]
+    for name, url, stype in defaults:
+        if stype not in existing_types:
+            db.add_site(name, url, stype)
     yield
     db.close()
 
@@ -163,14 +171,47 @@ async def delete_site(site_id: int):
 
 @app.post("/api/search")
 async def search_audio(body: SearchRequest):
-    """从指定站点搜索音频"""
+    """从指定站点搜索音频（支持 AudioJungle + 国内音乐站）"""
     from src.downloader.client import AudioJungleClient
+    from src.downloader.chinese_sites import get_scraper
     from src.config import SearchConfig
 
     site = db.conn.execute("SELECT * FROM sites WHERE id = ?", (body.site_id,)).fetchone()
     if not site:
         raise HTTPException(404, "站点不存在")
 
+    scraper_type = site["scraper_type"]
+    keyword = body.tags or ""  # 国内站用 tags 字段做搜索关键词
+
+    # ── 国内音乐站 ──
+    if scraper_type in ("netease", "qqmusic", "kugou"):
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                scraper = get_scraper(scraper_type, client)
+                if not scraper:
+                    raise HTTPException(400, f"不支持的站点类型: {scraper_type}")
+                items = await asyncio.wait_for(
+                    scraper.search(keyword, body.max_items or 20), timeout=30
+                )
+        except asyncio.TimeoutError:
+            raise HTTPException(504, "搜索超时")
+        except Exception as e:
+            raise HTTPException(502, f"搜索失败: {str(e)[:200]}")
+
+        for item in items:
+            sid = item["id"]
+            # 字符串 ID 用 hash 映射成整数
+            if isinstance(sid, str):
+                sid = abs(hash(sid)) % (10 ** 9)
+            db.conn.execute(
+                """INSERT OR IGNORE INTO items (id, title, author, preview_url, status, category, tags)
+                   VALUES (?, ?, ?, ?, 'pending', ?, ?)""",
+                (sid, item["title"], item["author"], item["preview_url"], scraper_type, json.dumps({"source": scraper_type, "source_id": item["id"]})),
+            )
+            db.conn.commit()
+        return {"items": items, "count": len(items)}
+
+    # ── AudioJungle ──
     sc = SearchConfig(
         price_max=body.price_max,
         sort=body.sort,  # type: ignore
@@ -205,8 +246,9 @@ async def search_audio(body: SearchRequest):
 
 @app.post("/api/download")
 async def download_items(body: DownloadRequest):
-    """下载选中项目的预览音频"""
+    """下载选中项目的预览音频（支持 AudioJungle + 国内站）"""
     from src.downloader.client import AudioJungleClient
+    from src.downloader.chinese_sites import get_scraper
 
     items = []
     for iid in body.item_ids:
@@ -217,6 +259,69 @@ async def download_items(body: DownloadRequest):
     if not items:
         raise HTTPException(400, "没有可下载的项目")
 
+    # 区分来源
+    source = ""
+    for item in items:
+        # 从 tags JSON 中读取来源
+        try:
+            tags = json.loads(item.get("tags", "[]"))
+            if isinstance(tags, dict):
+                source = tags.get("source", "")
+        except (json.JSONDecodeError, TypeError):
+            pass
+        if source:
+            break
+
+    # ── 国内站下载 ──
+    if source in ("netease", "qqmusic", "kugou"):
+        downloaded = 0
+        async with httpx.AsyncClient(timeout=60) as client:
+            scraper = get_scraper(source, client)
+            if not scraper:
+                raise HTTPException(400, f"不支持的站点: {source}")
+
+            output_dir = Path(config.download.output_dir)
+            output_dir.mkdir(parents=True, exist_ok=True)
+
+            for item in items:
+                iid = item["id"]
+                # 从 tags 获取原始 source_id
+                try:
+                    tags = json.loads(item.get("tags", "{}"))
+                    source_id = tags.get("source_id", iid) if isinstance(tags, dict) else iid
+                except (json.JSONDecodeError, TypeError):
+                    source_id = iid
+
+                db.update_status(iid, "downloading")
+                try:
+                    dl_url = await scraper.get_download_url(source_id)
+                    if not dl_url:
+                        db.update_status(iid, "failed", "无法获取下载链接（可能需要会员）")
+                        continue
+
+                    # 下载文件
+                    safe_title = "".join(c for c in (item.get("title") or f"track_{iid}") if c.isalnum() or c in " _-")[:60]
+                    item_dir = output_dir / f"{iid}_{safe_title}"
+                    item_dir.mkdir(parents=True, exist_ok=True)
+                    dest = item_dir / "preview.mp3"
+
+                    r = await client.get(dl_url, follow_redirects=True)
+                    r.raise_for_status()
+                    dest.write_bytes(r.content)
+
+                    if dest.exists() and dest.stat().st_size > 1000:
+                        db.update_download_path(iid, str(dest))
+                        db.update_status(iid, "downloaded")
+                        downloaded += 1
+                    else:
+                        dest.unlink(missing_ok=True)
+                        db.update_status(iid, "failed", "下载文件为空")
+                except Exception as e:
+                    db.update_status(iid, "failed", str(e)[:500])
+
+        return {"downloaded": downloaded}
+
+    # ── AudioJungle 下载 ──
     config.download.concurrency = body.concurrency
     async with AudioJungleClient(config) as client:
         count = await client.download_items(items, db, config.download)

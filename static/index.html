@@ -173,17 +173,18 @@ input:focus,select:focus{border-color:var(--accent)}
 
   <h3>搜索参数</h3>
   <div class="form-row">
-    <div class="form-group"><label>站点</label><select id="search-site"></select></div>
+    <div class="form-group"><label>站点</label><select id="search-site" onchange="onSiteChange()"></select></div>
+    <div class="form-group"><label>搜索关键词</label><input id="search-keyword" style="display:none" placeholder="输入歌曲名或歌手名搜索"></div>
+  </div>
+  <div class="form-row" id="aj-params">
     <div class="form-group"><label>最高价格 ($)</label><input id="search-price" type="number" value="19"></div>
     <div class="form-group"><label>最大数量</label><input id="search-max" type="number" value="20" placeholder="0=不限"></div>
-  </div>
-  <div class="form-row">
     <div class="form-group"><label>标签 (逗号分隔)</label><input id="search-tags" placeholder="corporate,inspiring"></div>
     <div class="form-group"><label>排序</label><select id="search-sort"><option value="date">日期</option><option value="sales">销量</option><option value="rating">评分</option><option value="price">价格</option></select></div>
   </div>
   <div class="btn-row">
     <button class="btn primary" onclick="searchAudio()">🔍 搜索</button>
-    <button class="btn" onclick="downloadSelected()">📥 下载选中</button>
+    <button class="btn" onclick="downloadAllResults()">📥 下载全部结果</button>
   </div>
   <div id="search-results"></div>
 </div>
@@ -347,18 +348,6 @@ async function stopSeparation(){
 }
 
 // ── Sites ────────────────────────────────────────────
-async function loadSites(){
-  try{
-    const sites=await api('GET','/sites');
-    const tbody=document.getElementById('sites-tbody');
-    const sel=document.getElementById('search-site');
-    tbody.innerHTML=''; sel.innerHTML='';
-    sites.forEach(s=>{
-      tbody.innerHTML+=`<tr><td>${s.name}</td><td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${s.url}</td><td>${s.scraper_type}</td><td>${s.enabled?'✅ 启用':'❌ 禁用'}</td><td><button class="btn sm danger" onclick="deleteSite(${s.id})">删除</button></td></tr>`;
-      sel.innerHTML+=`<option value="${s.id}">${s.name}</option>`;
-    });
-  }catch(e){toast('加载失败','error')}
-}
 function showAddSite(){document.getElementById('modal-overlay').style.display='flex'}
 function closeModal(){document.getElementById('modal-overlay').style.display='none'}
 async function addSite(){
@@ -379,37 +368,69 @@ async function deleteSite(id){
 
 // ── Search ───────────────────────────────────────────
 let searchResults=[];
+let currentSiteType='audiojungle';
+
+async function loadSites(){
+  try{
+    const sites=await api('GET','/sites');
+    const tbody=document.getElementById('sites-tbody');
+    const sel=document.getElementById('search-site');
+    tbody.innerHTML=''; sel.innerHTML='';
+    sites.forEach(s=>{
+      tbody.innerHTML+=`<tr><td>${s.name}</td><td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${s.url}</td><td>${s.scraper_type}</td><td>${s.enabled?'✅ 启用':'❌ 禁用'}</td><td><button class="btn sm danger" onclick="deleteSite(${s.id})">删除</button></td></tr>`;
+      sel.innerHTML+=`<option value="${s.id}" data-type="${s.scraper_type}">${s.name}</option>`;
+    });
+    onSiteChange();
+  }catch(e){toast('加载失败','error')}
+}
+
+function onSiteChange(){
+  const sel=document.getElementById('search-site');
+  const opt=sel.options[sel.selectedIndex];
+  currentSiteType=opt?.dataset?.type||'audiojungle';
+  const isChinese=currentSiteType==='netease'||currentSiteType==='qqmusic'||currentSiteType==='kugou';
+  document.getElementById('aj-params').style.display=isChinese?'none':'flex';
+  document.getElementById('search-keyword').style.display=isChinese?'block':'none';
+  document.getElementById('search-keyword').placeholder=isChinese?'输入歌曲名或歌手名搜索':'';
+}
+
 async function searchAudio(){
   const div=document.getElementById('search-results');
-  div.innerHTML='<p style="color:var(--dim)">搜索中... (AudioJungle 需要网络，可能需要 10-30 秒)</p>';
+  div.innerHTML='<p style="color:var(--dim)">搜索中...</p>';
   try{
     const siteId=parseInt(document.getElementById('search-site').value);
-    const r=await api('POST','/search',{
+    const body={
       site_id:siteId,
       price_max:parseInt(document.getElementById('search-price').value)||19,
       sort:document.getElementById('search-sort').value,
-      tags:document.getElementById('search-tags').value,
       max_items:parseInt(document.getElementById('search-max').value)||0,
-    });
+    };
+    // 国内站: 关键词=tags字段
+    if(currentSiteType!=='audiojungle'){
+      body.tags=document.getElementById('search-keyword').value||'热门';
+    }else{
+      body.tags=document.getElementById('search-tags').value;
+    }
+    const r=await api('POST','/search',body);
     searchResults=r.items;
     if(!r.count){
-      div.innerHTML='<p style="color:var(--dim);padding:20px">没有找到符合条件的结果，请调整搜索参数</p>';
+      div.innerHTML='<p style="color:var(--dim);padding:20px">没有找到结果，换个关键词试试</p>';
       return;
     }
     div.innerHTML=`<h3>搜索结果 (${r.count} 首)</h3>`;
     r.items.forEach(item=>{
-      div.innerHTML+=`<div class="search-result"><div class="info"><div class="title">${item.title}</div><div class="meta">${item.author||''} · $${item.price||0} · ${item.length||''}</div></div><div class="actions"><button class="btn sm primary" onclick="downloadSingle(${item.id})">下载</button></div></div>`;
+      div.innerHTML+=`<div class="search-result"><div class="info"><div class="title">${item.title}</div><div class="meta">${item.author||''} · ${item.source||''} · ${item.album||''}</div></div><div class="actions"><button class="btn sm primary" onclick="downloadSingle(${item.id})">下载</button></div></div>`;
     });
-  }catch(e){div.innerHTML=`<p style="color:var(--red);padding:20px">搜索失败: ${e.message}<br><small>提示: 中国大陆访问 AudioJungle 可能需要代理</small></p>`}
+  }catch(e){div.innerHTML=`<p style="color:var(--red);padding:20px">搜索失败: ${e.message}</p>`}
+}
+
+function downloadAllResults(){
+  if(!searchResults.length) return toast('请先搜索','error');
+  const ids=searchResults.map(i=>i.id);
+  api('POST','/download',{item_ids:ids}).then(r=>toast(`已下载 ${r.downloaded} 首`)).catch(e=>toast('下载失败: '+e.message,'error'));
 }
 async function downloadSingle(id){
-  try{await api('POST','/download',{item_ids:[id]});toast('下载完成');loadFiles()}
-  catch(e){toast('下载失败: '+e.message,'error')}
-}
-async function downloadSelected(){
-  const ids=searchResults.filter(()=>confirm('下载此项?')).map(i=>i.id);
-  if(!ids.length)return;
-  try{const r=await api('POST','/download',{item_ids:ids});toast(`已下载 ${r.downloaded} 首`)}
+  try{await api('POST','/download',{item_ids:[id]});toast('下载完成，刷新文件列表查看');loadFiles()}
   catch(e){toast('下载失败: '+e.message,'error')}
 }
 
