@@ -236,9 +236,13 @@ tr:hover td{background:rgba(255,255,255,.015)}
   <button class="btn p" onclick="saveSettings()">💾 保存</button>
 
   <h3>VIP Cookie（可选，填后可下载完整歌曲）</h3>
+  <p style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.8">
+    ① <a href="https://music.163.com" target="_blank" style="color:var(--accent)">打开网易云登录</a> → ② F12 → Application → Cookies → 复制 <b>MUSIC_U</b> 的值 → ③ 粘贴到下面<br>
+    <span style="color:var(--yellow);font-size:10px">注意：网易云/QQ/酷狗都用了加密登录，不支持直接填账号密码，只能用 Cookie 方式</span>
+  </p>
   <div class="form-grp" style="margin-bottom:12px">
-    <label>一键粘贴完整 Cookie（推荐）</label>
-    <input id="cfg-cookie-raw" placeholder="浏览器打开 music.163.com → F12 → Network → 任意请求 → Request Headers → 复制 Cookie: 后面一整行贴到这里" style="font-family:monospace;font-size:12px">
+    <label>一键粘贴完整 Cookie</label>
+    <input id="cfg-cookie-raw" placeholder="F12 → Network → 任意请求 → Request Headers → 复制 Cookie: 后面一整行" style="font-family:monospace;font-size:12px">
     <p style="font-size:10px;color:var(--muted);margin-top:4px">自动识别 MUSIC_U / uin / kg_mid</p>
   </div>
   <div class="form-row">
