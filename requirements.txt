@@ -11,6 +11,9 @@ fastapi>=0.115.0
 uvicorn>=0.30.0
 python-multipart>=0.0.12
 
+# === 加密（网易云登录用） ===
+pycryptodome
+
 # === 人声分离 ===
 # Demucs v4 (Meta AI) — 已验证支持 Python 3.14
 demucs

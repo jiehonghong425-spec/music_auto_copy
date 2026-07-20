@@ -235,15 +235,30 @@ tr:hover td{background:rgba(255,255,255,.015)}
   <div class="form-grp"><label>输出目录</label><input id="cfg-output" value="./separated"></div>
   <button class="btn p" onclick="saveSettings()">💾 保存</button>
 
-  <h3>VIP Cookie（可选，填后可下载完整歌曲）</h3>
-  <p style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.8">
-    ① <a href="https://music.163.com" target="_blank" style="color:var(--accent)">打开网易云登录</a> → ② F12 → Application → Cookies → 复制 <b>MUSIC_U</b> 的值 → ③ 粘贴到下面<br>
-    <span style="color:var(--yellow);font-size:10px">注意：网易云/QQ/酷狗都用了加密登录，不支持直接填账号密码，只能用 Cookie 方式</span>
+  <h3>网易云登录</h3>
+  <p style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.8">
+    两种方式任选其一：
   </p>
+  <div class="form-row">
+    <div class="form-grp">
+      <label>📱 手机号登录</label>
+      <input id="cfg-163-phone" placeholder="手机号">
+    </div>
+    <div class="form-grp">
+      <label>密码</label>
+      <input id="cfg-163-pwd" type="password" placeholder="密码" onkeydown="if(event.key==='Enter')login163()">
+    </div>
+  </div>
+  <div class="actions" style="margin-bottom:16px">
+    <button class="btn p" onclick="login163()">登录网易云</button>
+    <span id="login163-status" style="font-size:13px;margin-left:8px"></span>
+    <span style="font-size:10px;color:var(--muted);margin-left:8px">部分账号可能需要验证码，如果失败请用下面 Cookie 方式</span>
+  </div>
+
+  <h3 style="margin-bottom:8px">或手动粘贴 Cookie</h3>
   <div class="form-grp" style="margin-bottom:12px">
     <label>一键粘贴完整 Cookie</label>
-    <input id="cfg-cookie-raw" placeholder="F12 → Network → 任意请求 → Request Headers → 复制 Cookie: 后面一整行" style="font-family:monospace;font-size:12px">
-    <p style="font-size:10px;color:var(--muted);margin-top:4px">自动识别 MUSIC_U / uin / kg_mid</p>
+    <input id="cfg-cookie-raw" placeholder="F12 → Application → Cookies → music.163.com → 复制 MUSIC_U 的值贴到这里" style="font-family:monospace;font-size:12px">
   </div>
   <div class="form-row">
     <div class="form-grp">
@@ -508,6 +523,25 @@ async function uploadFiles(files){
 async function startSepOne(id){try{await api('POST','/separate',{item_ids:[id]});toast('已开始分离')}catch(e){toast(e.message,'er')}}
 
 // ── Settings ────────────────────────────────
+async function login163(){
+  const phone=document.getElementById('cfg-163-phone').value.trim();
+  const pwd=document.getElementById('cfg-163-pwd').value.trim();
+  if(!phone||!pwd)return toast('请输入手机号和密码','er');
+  const st=document.getElementById('login163-status');
+  st.innerHTML='<span style="color:var(--yellow)">登录中...</span>';
+  try{
+    const r=await fetch(API+'/login/netease',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:`phone=${encodeURIComponent(phone)}&password=${encodeURIComponent(pwd)}`});
+    const d=await r.json();
+    if(d.ok){
+      st.innerHTML='<span class="tag ok">登录成功</span>';
+      document.getElementById('cfg-cookie-netease').value=d.token||'';
+      toast('网易云登录成功');
+    }else{
+      st.innerHTML='<span class="tag err">'+d.error+'</span>';
+    }
+  }catch(e){st.innerHTML='<span class="tag err">登录失败</span>'}
+}
+
 async function saveCookies(){
   const raw=document.getElementById('cfg-cookie-raw').value;
   const body=raw

@@ -187,6 +187,77 @@ async def save_cookies(netease: str = "", qqmusic: str = "", kugou: str = "", ra
     }
 
 
+@app.post("/api/login/netease")
+async def login_netease(phone: str = "", password: str = ""):
+    """网易云手机号密码登录"""
+    if not phone or not password:
+        raise HTTPException(400, "手机号和密码不能为空")
+
+    try:
+        from Crypto.Cipher import AES
+        import hashlib, base64, os
+
+        def weapi(data: dict) -> dict:
+            key = b'0CoJUm6Qyw8W8jud'
+            iv = b'0102030405060708'
+            rand_key = os.urandom(16).hex()[:16].encode()
+            def aes_e(text, k, i):
+                pad = 16 - len(text) % 16
+                text += chr(pad) * pad
+                return base64.b64encode(AES.new(k, AES.MODE_CBC, i).encrypt(text.encode())).decode()
+            p = aes_e(json.dumps(data), key, iv)
+            p = aes_e(p, rand_key, iv)
+            sk = base64.b64encode(bytes(
+                [rand_key[i % len(rand_key)] ^ key[i % len(key)] for i in range(len(rand_key))]
+            )).decode()
+            return {'params': p, 'encSecKey': sk}
+
+        pw_md5 = hashlib.md5(password.encode()).hexdigest()
+        enc = weapi({'phone': phone, 'password': pw_md5, 'rememberLogin': 'true'})
+
+        async with httpx.AsyncClient(timeout=15) as cli:
+            r = await cli.post(
+                'https://music.163.com/weapi/login/cellphone',
+                data=enc,
+                headers={'User-Agent': 'Mozilla/5.0', 'Referer': 'https://music.163.com',
+                         'Content-Type': 'application/x-www-form-urlencoded'},
+            )
+            if r.status_code != 200 or not r.text:
+                # 尝试 eapi
+                r2 = await cli.post(
+                    'https://music.163.com/eapi/login/cellphone',
+                    data=enc,
+                    headers={'User-Agent': 'Mozilla/5.0', 'Referer': 'https://music.163.com',
+                             'Content-Type': 'application/x-www-form-urlencoded'},
+                )
+                if r2.status_code == 200 and r2.text:
+                    r = r2
+
+            if r.status_code == 200 and r.text:
+                data = json.loads(r.text)
+                if data.get('code') == 200:
+                    token = data.get('token', '') or data.get('cookie', '')
+                    # 也尝试从响应 cookie 获取
+                    cookies_dict = dict(r.cookies)
+                    music_u = cookies_dict.get('MUSIC_U', token)
+                    if music_u:
+                        config.cookies.netease = music_u
+                        config.save('./config.yaml')
+                        return {'ok': True, 'token': music_u}
+                    return {'ok': False, 'error': '登录成功但未获取到Cookie'}
+                else:
+                    msg = data.get('message', data.get('msg', ''))
+                    if '密码' in msg: return {'ok': False, 'error': '密码错误'}
+                    if '验证' in msg: return {'ok': False, 'error': '需要验证码，请用Cookie方式'}
+                    if '频繁' in msg: return {'ok': False, 'error': '操作频繁，请稍后'}
+                    return {'ok': False, 'error': msg or '登录失败，请用Cookie方式'}
+            return {'ok': False, 'error': 'API无响应，请用Cookie方式'}
+    except ImportError:
+        raise HTTPException(500, '加密模块未安装，请用Cookie方式')
+    except Exception as e:
+        raise HTTPException(500, f'登录异常: {str(e)[:100]}')
+
+
 async def _verify_netease_cookie(cookie: str) -> bool:
     """验证网易云 Cookie：请求用户信息接口"""
     try:
