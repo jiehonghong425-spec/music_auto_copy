@@ -281,7 +281,7 @@ async def login_qqmusic(phone: str = "", password: str = ""):
                         config.cookies.qqmusic = musickey
                         config.save('./config.yaml')
                         return {'ok': True, 'token': musickey}
-                msg = login.get('data', {}).get('errMsg', '') or f'code={login.get(\"code\")}'
+                msg = login.get('data', {}).get('errMsg', '') or ('code=' + str(login.get('code')))
                 if '密码' in msg: return {'ok': False, 'error': '密码错误'}
                 if '验证' in msg: return {'ok': False, 'error': '需要验证码'}
                 return {'ok': False, 'error': msg or '登录失败，请用Cookie方式'}
