@@ -310,23 +310,40 @@ async def remove_from_queue(item_id: int):
 
 @app.post("/api/download")
 async def download_items(body: DownloadRequest):
-    """下载选中项目的预览音频（支持 AudioJungle + 国内站）"""
+    """下载选中项目的预览音频（支持 AudioJungle + 国内站 + 本地上传）"""
     from src.downloader.client import AudioJungleClient
     from src.downloader.chinese_sites import get_scraper
 
     items = []
     for iid in body.item_ids:
-        row = db.conn.execute("SELECT * FROM items WHERE id = ?", (iid,)).fetchone()
+        row = db.conn.execute("SELECT * FROM items WHERE id = ? AND status = 'pending'", (iid,)).fetchone()
         if row:
             items.append(dict(row))
 
     if not items:
-        raise HTTPException(400, "没有可下载的项目")
+        raise HTTPException(400, "没有待下载的项目")
+
+    # ── 本地上传文件快通道：已有文件直接标记已下载 ──
+    local_items = []
+    remote_items = []
+    for item in items:
+        dp = item.get("download_path", "")
+        if dp and Path(dp).exists() and Path(dp).stat().st_size > 1000:
+            local_items.append(item)
+        else:
+            remote_items.append(item)
+
+    for item in local_items:
+        db.update_status(item["id"], "downloaded")
+
+    if not remote_items:
+        return {"downloaded": len(local_items)}
+
+    items = remote_items
 
     # 区分来源
     source = ""
     for item in items:
-        # 从 tags JSON 中读取来源
         try:
             tags = json.loads(item.get("tags", "[]"))
             if isinstance(tags, dict):
@@ -394,13 +411,13 @@ async def download_items(body: DownloadRequest):
                 except Exception as e:
                     db.update_status(iid, "failed", str(e)[:500])
 
-        return {"downloaded": downloaded}
+        return {"downloaded": downloaded + len(local_items)}
 
     # ── AudioJungle 下载 ──
     config.download.concurrency = body.concurrency
     async with AudioJungleClient(config) as client:
         count = await client.download_items(items, db, config.download)
-    return {"downloaded": count}
+    return {"downloaded": count + len(local_items)}
 
 
 # ── 分离 ──────────────────────────────────────────────────
@@ -424,8 +441,13 @@ async def start_separation(body: SeparateRequest):
                 to_separate.append(dict(row))
     else:
         to_separate = db.get_items_by_status("downloaded")
-        # 也包含之前失败的
         to_separate += db.get_items_by_status("failed")
+        # 也包含待处理但有本地文件的项目（本地上传）
+        pending = db.get_items_by_status("pending")
+        for p in pending:
+            dp = p.get("download_path", "")
+            if dp and Path(dp).exists() and Path(dp).stat().st_size > 1000:
+                to_separate.append(p)
 
     if not to_separate:
         raise HTTPException(400, "没有待分离的文件")

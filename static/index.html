@@ -370,7 +370,7 @@ if(dz){dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('d
 async function uploadFiles(files){
   if(!files.length)return;const fd=new FormData();for(const f of files)fd.append('files',f);
   try{const r=await fetch(API+'/upload',{method:'POST',body:fd});const d=await r.json();const div=document.getElementById('upload-results');
-  div.innerHTML='<h3>上传结果</h3>'+d.results.map(r=>`<div class="list-item"><div class="li-info"><div class="li-title">${r.name}</div><div class="li-meta">${r.ok?`✅ ${(r.size/1e6).toFixed(1)}MB · ${r.type}`:'❌ '+r.error}</div></div>${r.ok?`<button class="btn sm p" onclick="startSepOne(${r.item_id})">分离</button>`:''}</div>`).join('');
+  div.innerHTML='<h3>上传结果</h3>'+d.results.map(r=>`<div class="list-item"><div class="li-info"><div class="li-title">${r.name}</div><div class="li-meta">${r.ok?`✅ ${(r.size/1e6).toFixed(1)}MB · ${r.type} · 已加入待处理队列`:'❌ '+r.error}</div></div></div>`).join('');
   toast('上传 '+d.results.filter(r=>r.ok).length+'/'+d.count)}catch(e){toast('上传失败','er')}
 }
 async function startSepOne(id){try{await api('POST','/separate',{item_ids:[id]});toast('已开始分离')}catch(e){toast(e.message,'er')}}

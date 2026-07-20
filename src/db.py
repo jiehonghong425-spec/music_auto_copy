@@ -181,8 +181,7 @@ class Database:
         return row is not None
 
     def insert_uploaded_item(self, title: str, author: str = "", file_path: str = "") -> int:
-        """插入上传的文件项目（自动生成负数 ID 避免与抓取 ID 冲突）"""
-        # 找最小可用负数 ID
+        """插入上传的文件项目（自动生成负数 ID，状态为 pending 加入队列）"""
         row = self.conn.execute(
             "SELECT MIN(id) as min_id FROM items WHERE id < 0"
         ).fetchone()
@@ -190,7 +189,7 @@ class Database:
 
         self.conn.execute(
             """INSERT INTO items (id, title, author, download_path, status)
-               VALUES (?, ?, ?, ?, 'downloaded')""",
+               VALUES (?, ?, ?, ?, 'pending')""",
             (new_id, title, author, file_path),
         )
         self.conn.commit()
