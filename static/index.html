@@ -235,25 +235,22 @@ tr:hover td{background:rgba(255,255,255,.015)}
   <div class="form-grp"><label>输出目录</label><input id="cfg-output" value="./separated"></div>
   <button class="btn p" onclick="saveSettings()">💾 保存</button>
 
-  <h3>账号登录</h3>
-  <div class="form-row">
-    <div class="form-grp">
-      <label>手机号</label>
-      <input id="cfg-login-phone" placeholder="手机号">
-    </div>
-    <div class="form-grp">
-      <label>密码</label>
-      <input id="cfg-login-pwd" type="password" placeholder="密码" onkeydown="if(event.key==='Enter')loginSite('netease')">
-    </div>
-  </div>
+  <h3>扫码登录</h3>
+  <p style="font-size:12px;color:var(--muted);margin-bottom:12px">使用手机 App 扫描二维码登录，自动保存 VIP Cookie，无需输入密码</p>
   <div class="actions" style="margin-bottom:16px">
-    <button class="btn p" onclick="loginSite('netease')">网易云登录</button>
-    <button class="btn" onclick="loginSite('qqmusic')">QQ登录</button>
-    <button class="btn" onclick="loginSite('kugou')">酷狗登录</button>
-    <span id="login-status" style="font-size:13px;margin-left:8px"></span>
+    <button class="btn p" onclick="showQR('netease')">🎵 网易云扫码</button>
+    <button class="btn" onclick="showQR('qqmusic')">🎶 QQ扫码</button>
+    <button class="btn" onclick="showQR('kugou')">🎤 酷狗扫码</button>
+  </div>
+  <!-- QR 显示区域（默认隐藏） -->
+  <div id="qr-area" style="display:none;margin:0 0 20px;padding:24px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);text-align:center">
+    <div style="font-size:14px;font-weight:600;margin-bottom:16px" id="qr-site-label"></div>
+    <img id="qr-image" style="width:200px;height:200px;border-radius:8px;background:#fff;padding:8px;display:none" alt="扫码登录">
+    <div style="margin-top:14px;font-size:13px" id="qr-status"></div>
+    <button class="btn sm" onclick="cancelQR()" id="qr-cancel-btn" style="display:none;margin-top:12px">取消</button>
   </div>
 
-  <h3 style="margin-bottom:8px">或手动粘贴 Cookie</h3>
+<h3 style="margin-bottom:8px">或手动粘贴 Cookie</h3>
   <div class="form-grp" style="margin-bottom:12px">
     <label>一键粘贴完整 Cookie</label>
     <input id="cfg-cookie-raw" placeholder="F12 → Application → Cookies → music.163.com → 复制 MUSIC_U 的值贴到这里" style="font-family:monospace;font-size:12px">
@@ -520,26 +517,73 @@ async function uploadFiles(files){
 }
 async function startSepOne(id){try{await api('POST','/separate',{item_ids:[id]});toast('已开始分离')}catch(e){toast(e.message,'er')}}
 
-// ── Settings ────────────────────────────────
-const LOGIN_NAMES={netease:'网易云',qqmusic:'QQ音乐',kugou:'酷狗'};
-async function loginSite(site){
-  const phone=document.getElementById('cfg-login-phone').value.trim();
-  const pwd=document.getElementById('cfg-login-pwd').value.trim();
-  if(!phone||!pwd)return toast('请输入手机号和密码','er');
-  const st=document.getElementById('login-status');
-  st.innerHTML='<span style="color:var(--yellow)">'+LOGIN_NAMES[site]+'登录中...</span>';
+// ── Settings / QR Login ────────────────────
+const SITE_NAMES={netease:'网易云音乐',qqmusic:'QQ音乐',kugou:'酷狗音乐'};
+let _qrTimer=null,_qrSession='',_qrSite='';
+
+async function showQR(site){
+  cancelQR();
+  const area=document.getElementById('qr-area');
+  const img=document.getElementById('qr-image');
+  const status=document.getElementById('qr-status');
+  const label=document.getElementById('qr-site-label');
+  area.style.display='block';
+  img.style.display='none';
+  status.textContent='⏳ 生成二维码中...';
+  label.textContent=SITE_NAMES[site];
+  document.getElementById('qr-cancel-btn').style.display='inline-flex';
+  _qrSite=site;
   try{
-    const r=await fetch(API+'/login/'+site,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'phone='+encodeURIComponent(phone)+'&password='+encodeURIComponent(pwd)});
-    const d=await r.json();
-    if(d.ok){
-      st.innerHTML='<span class="tag ok">'+LOGIN_NAMES[site]+'登录成功</span>';
-      document.getElementById('cfg-cookie-'+site).value=d.token||'';
-      document.getElementById('cookie-status-'+site).innerHTML='<span class="tag ok">已登录</span>';
-      toast(LOGIN_NAMES[site]+'登录成功');
-    }else{
-      st.innerHTML='<span class="tag err">'+LOGIN_NAMES[site]+': '+d.error+'</span>';
+    const r=await api('POST','/login/'+site+'/qr');
+    if(!r.ok){status.textContent='❌ 生成失败';return}
+    _qrSession=r.session;
+    if(!r.qrimg){status.textContent='❌ 未获取到二维码';return}
+    img.src=r.qrimg;
+    img.style.display='block';
+    status.textContent='📱 请使用 '+SITE_NAMES[site]+' App 扫描二维码';
+    _pollQR();
+  }catch(e){
+    status.textContent='❌ 生成二维码失败: '+e.message;
+    document.getElementById('qr-cancel-btn').style.display='inline-flex';
+  }
+}
+
+async function _pollQR(){
+  if(!_qrSession)return;
+  try{
+    const r=await api('GET','/login/'+_qrSite+'/qr/check?session='+encodeURIComponent(_qrSession));
+    const status=document.getElementById('qr-status');
+    if(r.ok&&r.status==='confirmed'){
+      clearTimeout(_qrTimer);
+      status.innerHTML='<span class="tag ok">🎉 '+SITE_NAMES[_qrSite]+' 登录成功！Cookie 已保存</span>';
+      document.getElementById('qr-cancel-btn').style.display='none';
+      // 自动填入 cookie 并验证
+      const site=_qrSite;
+      if(r.token){
+        document.getElementById('cfg-cookie-'+site).value=r.token;
+        document.getElementById('cookie-status-'+site).innerHTML='<span class="tag ok">已登录</span>';
+      }
+      toast(SITE_NAMES[site]+' 扫码登录成功');
+      _qrSession='';
+      return;
     }
-  }catch(e){st.innerHTML='<span class="tag err">登录失败</span>'}
+    switch(r.status){
+      case 'waiting': status.textContent='等待扫码...'; break;
+      case 'scanned': status.textContent='✅ 已扫码，请在手机上确认登录'; break;
+      case 'expired': status.innerHTML='<span class="tag err">⏰ 二维码已过期，请重新扫码</span>'; document.getElementById('qr-cancel-btn').style.display='none'; _qrSession=''; return;
+      default: status.textContent=r.message||'等待中...';
+    }
+    _qrTimer=setTimeout(_pollQR,2000);
+  }catch(e){
+    _qrTimer=setTimeout(_pollQR,3000);
+  }
+}
+
+function cancelQR(){
+  clearTimeout(_qrTimer);
+  _qrTimer=null;
+  _qrSession='';
+  document.getElementById('qr-area').style.display='none';
 }
 
 async function saveCookies(){
