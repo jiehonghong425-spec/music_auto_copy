@@ -2,10 +2,8 @@
 """音乐处理平台 — FastAPI Web 后端"""
 
 import asyncio
-import base64
 import json
 import os
-import secrets
 import shutil
 import subprocess
 import sys
@@ -37,11 +35,6 @@ db: Database = None
 separation_running = False
 separation_progress = {"current": 0, "total": 0, "title": "", "eta_seconds": 0, "completed": 0}
 progress_listeners: list[asyncio.Queue] = []
-
-# ── QR 扫码登录会话（内存存储，5分钟过期） ──────────────
-
-_qr_sessions: dict[str, dict] = {}  # session_id -> {site, key, expires}
-_QRTIMEOUT = 300
 
 
 def _notify_progress():
@@ -108,7 +101,7 @@ async def lifespan(app: FastAPI):
     # 插入默认站点（按 scraper_type 去重）
     existing_types = {s["scraper_type"] for s in db.list_sites()}
     defaults = [
-        ("AudioJungle (国外)", "https://audiojungle.net", "audiojungle"),
+        ("AudioJungle（国外）", "https://audiojungle.net", "audiojungle"),
         ("网易云音乐", "https://music.163.com", "netease"),
         ("QQ音乐", "https://y.qq.com", "qqmusic"),
         ("酷狗音乐", "http://www.kugou.com", "kugou"),
@@ -141,432 +134,7 @@ async def get_config():
         "price_max": config.search.price_max,
         "port": config.server.port,
         "host": config.server.host,
-        "cookies": {
-            "netease": config.cookies.netease[:20] + "..." if len(config.cookies.netease) > 20 else config.cookies.netease,
-            "qqmusic": config.cookies.qqmusic[:20] + "..." if len(config.cookies.qqmusic) > 20 else config.cookies.qqmusic,
-            "kugou": config.cookies.kugou[:20] + "..." if len(config.cookies.kugou) > 20 else config.cookies.kugou,
-        },
     }
-
-
-@app.post("/api/cookies")
-async def save_cookies(netease: str = "", qqmusic: str = "", kugou: str = "", raw: str = ""):
-    """保存并验证 VIP Cookie"""
-    # 如果粘贴了原始 Cookie 字符串，自动解析
-    if raw and not netease:
-        pairs = {}
-        for part in raw.replace("\n", "").replace("\r", "").split(";"):
-            part = part.strip()
-            if "=" in part:
-                k, v = part.split("=", 1)
-                pairs[k.strip()] = v.strip()
-        if "MUSIC_U" in pairs: netease = pairs["MUSIC_U"]
-        if "uin" in pairs: qqmusic = pairs["uin"]
-        elif "qqmusic_key" in pairs: qqmusic = pairs["qqmusic_key"]
-        if "kg_mid" in pairs: kugou = pairs["kg_mid"]
-        elif "kg_mid_v2" in pairs: kugou = pairs["kg_mid_v2"]
-
-    if netease: config.cookies.netease = netease
-    if qqmusic: config.cookies.qqmusic = qqmusic
-    if kugou: config.cookies.kugou = kugou
-    config.save("./config.yaml")
-
-    # 验证 Cookie 是否有效
-    valid = {}
-    verify_tasks = []
-    if netease:
-        verify_tasks.append(("netease", _verify_netease_cookie(netease)))
-    if qqmusic:
-        verify_tasks.append(("qqmusic", _verify_qq_cookie(qqmusic)))
-    if kugou:
-        verify_tasks.append(("kugou", _verify_kugou_cookie(kugou)))
-
-    for name, task in verify_tasks:
-        try:
-            valid[name] = await task
-        except Exception:
-            valid[name] = False
-
-    return {
-        "ok": True,
-        "parsed": {"netease": bool(netease), "qqmusic": bool(qqmusic), "kugou": bool(kugou)},
-        "valid": valid,
-    }
-
-
-# ═══════════════════════════════════════════════════════════
-# 扫码登录（网易云 / QQ音乐 / 酷狗）
-# ═══════════════════════════════════════════════════════════
-
-@app.post("/api/login/netease/qr")
-async def netease_qr_create():
-    """网易云扫码登录 — 第一步：生成二维码"""
-    ts = int(time.time() * 1000)
-    session_id = secrets.token_hex(16)
-
-    async with httpx.AsyncClient(timeout=15, verify=False) as cli:
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Referer": "https://music.163.com",
-        }
-
-        # 获取 unikey（尝试多个可能的端点）
-        r1 = await cli.get(
-            f"https://music.163.com/api/login/qr/key?timestamp={ts}",
-            headers=headers,
-        )
-        data1 = r1.json()
-        if data1.get("code") != 200:
-            # 备用端点
-            r1 = await cli.get(
-                f"https://music.163.com/weapi/login/qr/key?timestamp={ts}",
-                headers=headers,
-            )
-            data1 = r1.json()
-        if data1.get("code") != 200:
-            raise HTTPException(502, f"获取二维码失败: {data1}")
-        unikey = data1["data"]["unikey"]
-
-        # 生成二维码图片
-        r2 = await cli.get(
-            f"https://music.163.com/api/login/qr/create?key={unikey}&qrimg=true&timestamp={ts}",
-            headers=headers,
-        )
-        data2 = r2.json()
-        if data2.get("code") != 200:
-            raise HTTPException(502, f"生成二维码失败: {data2}")
-        qrimg = data2["data"]["qrimg"]  # base64 data URL
-
-    _qr_sessions[session_id] = {
-        "site": "netease",
-        "key": unikey,
-        "expires": time.time() + _QRTIMEOUT,
-    }
-    return {"ok": True, "session": session_id, "qrimg": qrimg, "expires_in": _QRTIMEOUT}
-
-
-@app.get("/api/login/netease/qr/check")
-async def netease_qr_check(session: str = ""):
-    """网易云扫码登录 — 第二步：轮询扫码状态"""
-    sess = _qr_sessions.get(session)
-    if not sess or sess.get("site") != "netease":
-        raise HTTPException(400, "无效的会话或已过期")
-    if time.time() > sess["expires"]:
-        _qr_sessions.pop(session, None)
-        return {"ok": False, "status": "expired", "message": "二维码已过期，请重新扫码"}
-
-    ts = int(time.time() * 1000)
-    async with httpx.AsyncClient(timeout=10) as cli:
-        r = await cli.get(
-            f"https://music.163.com/api/login/qr/check?key={sess['key']}&timestamp={ts}",
-            headers={"User-Agent": "Mozilla/5.0", "Referer": "https://music.163.com"},
-        )
-        data = r.json()
-        code = data.get("code", -1)
-
-    if code == 803:
-        # 登录成功 — 从 HTTP 响应 cookie 提取 MUSIC_U
-        music_u = ""
-        for c in r.cookies:
-            if c.name == "MUSIC_U":
-                music_u = c.value
-                break
-        if not music_u:
-            # 兜底：从响应体取
-            music_u = data.get("cookie", "")
-
-        if music_u:
-            config.cookies.netease = music_u
-            config.save("./config.yaml")
-
-        _qr_sessions.pop(session, None)
-        return {"ok": True, "status": "confirmed", "token": music_u}
-    elif code == 802:
-        return {"ok": False, "status": "scanned", "message": "已扫码，请在手机上确认"}
-    elif code == 801:
-        return {"ok": False, "status": "waiting", "message": "等待扫码"}
-    elif code == 800:
-        _qr_sessions.pop(session, None)
-        return {"ok": False, "status": "expired", "message": "二维码已过期，请重新扫码"}
-    else:
-        return {"ok": False, "status": "waiting", "message": f"等待扫码 (code={code})"}
-
-
-@app.post("/api/login/qqmusic/qr")
-async def qqmusic_qr_create():
-    """QQ音乐扫码登录 — 第一步：生成二维码"""
-    session_id = secrets.token_hex(16)
-
-    async with httpx.AsyncClient(timeout=15) as cli:
-        r = await cli.post(
-            "https://u.y.qq.com/cgi-bin/musicu.fcg",
-            json={
-                "req_0": {
-                    "module": "music.login.LoginServer",
-                    "method": "GetQRCode",
-                    "param": {},
-                }
-            },
-            headers={"User-Agent": "Mozilla/5.0", "Referer": "https://y.qq.com"},
-        )
-        data = r.json()
-        req0 = data.get("req_0", {})
-        if req0.get("code") != 0:
-            err_msg = req0.get("data", {}).get("errMsg", str(req0))
-            raise HTTPException(502, f"获取QQ音乐二维码失败: {err_msg}")
-
-        qrcode_data = req0.get("data", {})
-        qrcode_id = qrcode_data.get("qrcode_id", "")
-        qr_img_url = qrcode_data.get("qrcode", "")
-
-        if not qrcode_id:
-            raise HTTPException(502, "未获取到 qrcode_id")
-
-        # 下载二维码图片并转 base64
-        img_base64 = ""
-        if qr_img_url:
-            try:
-                img_r = await cli.get(qr_img_url, timeout=10)
-                img_base64 = "data:image/png;base64," + base64.b64encode(img_r.content).decode()
-            except Exception:
-                pass
-
-    _qr_sessions[session_id] = {
-        "site": "qqmusic",
-        "key": qrcode_id,
-        "expires": time.time() + _QRTIMEOUT,
-    }
-    return {
-        "ok": True,
-        "session": session_id,
-        "qrimg": img_base64,
-        "expires_in": _QRTIMEOUT,
-    }
-
-
-@app.get("/api/login/qqmusic/qr/check")
-async def qqmusic_qr_check(session: str = ""):
-    """QQ音乐扫码登录 — 第二步：轮询扫码状态"""
-    sess = _qr_sessions.get(session)
-    if not sess or sess.get("site") != "qqmusic":
-        raise HTTPException(400, "无效的会话或已过期")
-    if time.time() > sess["expires"]:
-        _qr_sessions.pop(session, None)
-        return {"ok": False, "status": "expired", "message": "二维码已过期，请重新扫码"}
-
-    async with httpx.AsyncClient(timeout=10) as cli:
-        headers = {"User-Agent": "Mozilla/5.0", "Referer": "https://y.qq.com"}
-
-        # Step 1: 检查二维码状态
-        r = await cli.post(
-            "https://u.y.qq.com/cgi-bin/musicu.fcg",
-            json={
-                "req_0": {
-                    "module": "music.login.LoginServer",
-                    "method": "GetQRCodeStatus",
-                    "param": {"qrcode_id": sess["key"]},
-                }
-            },
-            headers=headers,
-        )
-        data = r.json()
-        req0 = data.get("req_0", {})
-        qr_status = req0.get("data", {}).get("status", -1)
-
-        if qr_status == 0:
-            # Step 2: 二维码已确认，执行登录
-            r2 = await cli.post(
-                "https://u.y.qq.com/cgi-bin/musicu.fcg",
-                json={
-                    "req_0": {
-                        "module": "music.login.LoginServer",
-                        "method": "QRCodeLogin",
-                        "param": {"qrcode_id": sess["key"]},
-                    }
-                },
-                headers=headers,
-            )
-            login_data = r2.json()
-            login_resp = login_data.get("req_0", {})
-            if login_resp.get("code") == 0:
-                musickey = login_resp.get("data", {}).get("musickey", "")
-                # 也从 cookie 中提取
-                if not musickey:
-                    for c in r2.cookies:
-                        if c.name in ("uin", "qqmusic_key", "musickey"):
-                            musickey = c.value
-                            break
-                if musickey:
-                    config.cookies.qqmusic = musickey
-                    config.save("./config.yaml")
-                _qr_sessions.pop(session, None)
-                return {"ok": True, "status": "confirmed", "token": musickey}
-            else:
-                _qr_sessions.pop(session, None)
-                return {"ok": False, "status": "expired", "message": "登录确认失败，请重试"}
-
-        elif qr_status == 67:
-            return {"ok": False, "status": "scanned", "message": "已扫码，请在手机上确认"}
-        elif qr_status == 66:
-            return {"ok": False, "status": "scanned", "message": "已扫码，等待确认"}
-        elif qr_status == 65:
-            _qr_sessions.pop(session, None)
-            return {"ok": False, "status": "expired", "message": "二维码已过期，请重新扫码"}
-        else:
-            return {"ok": False, "status": "waiting", "message": "等待扫码"}
-
-
-@app.post("/api/login/kugou/qr")
-async def kugou_qr_create():
-    """酷狗扫码登录 — 第一步：生成二维码"""
-    session_id = secrets.token_hex(16)
-
-    async with httpx.AsyncClient(timeout=15, verify=False) as cli:
-        # 酷狗使用 HTTP（HTTPS 证书不匹配）
-        for base_url in [
-            "https://login.user.kugou.com/login/qr/key",
-            "http://login.user.kugou.com/login/qr/key",
-        ]:
-            try:
-                r = await cli.get(
-                    base_url,
-                    headers={"User-Agent": "Mozilla/5.0", "Referer": "https://www.kugou.com"},
-                )
-                data = r.json()
-                qrcode_key = data.get("qrcode", "")
-                qr_img_url = data.get("qrcode_img", "")
-                if qrcode_key:
-                    break
-            except Exception:
-                continue
-
-        if not qrcode_key:
-            raise HTTPException(502, f"获取酷狗二维码失败")
-
-        # 下载二维码图片并转 base64
-        img_base64 = ""
-        if qr_img_url:
-            try:
-                img_r = await cli.get(qr_img_url, timeout=10)
-                img_base64 = "data:image/png;base64," + base64.b64encode(img_r.content).decode()
-            except Exception:
-                pass
-
-    _qr_sessions[session_id] = {
-        "site": "kugou",
-        "key": qrcode_key,
-        "expires": time.time() + _QRTIMEOUT,
-    }
-    return {
-        "ok": True,
-        "session": session_id,
-        "qrimg": img_base64,
-        "expires_in": _QRTIMEOUT,
-    }
-
-
-@app.get("/api/login/kugou/qr/check")
-async def kugou_qr_check(session: str = ""):
-    """酷狗扫码登录 — 第二步：轮询扫码状态"""
-    sess = _qr_sessions.get(session)
-    if not sess or sess.get("site") != "kugou":
-        raise HTTPException(400, "无效的会话或已过期")
-    if time.time() > sess["expires"]:
-        _qr_sessions.pop(session, None)
-        return {"ok": False, "status": "expired", "message": "二维码已过期，请重新扫码"}
-
-    async with httpx.AsyncClient(timeout=10, verify=False) as cli:
-        # 尝试 HTTPS 和 HTTP
-        for base_url in [
-            f"https://login.user.kugou.com/login/qr/check?qrcode={sess['key']}",
-            f"http://login.user.kugou.com/login/qr/check?qrcode={sess['key']}",
-        ]:
-            try:
-                r = await cli.get(
-                    base_url,
-                    headers={"User-Agent": "Mozilla/5.0"},
-                )
-                data = r.json()
-                break
-            except Exception:
-                continue
-        else:
-            return {"ok": False, "status": "waiting", "message": "等待扫码（网络错误）"}
-        status = data.get("status", -1)
-        error_code = data.get("error_code", "")
-
-        # 成功
-        if status == 1 or error_code == 0:
-            token = data.get("data", {}).get("token", "") or data.get("data", {}).get("sessionid", "")
-            kg_mid = ""
-            for c in r.cookies:
-                if c.name in ("kg_mid", "kg_mid_v2"):
-                    kg_mid = c.value
-                    break
-            cookie_val = token or kg_mid
-            if cookie_val:
-                config.cookies.kugou = cookie_val
-                config.save("./config.yaml")
-            _qr_sessions.pop(session, None)
-            return {"ok": True, "status": "confirmed", "token": cookie_val}
-
-        # 等待扫码状态
-        if status == 0:
-            return {"ok": False, "status": "waiting", "message": "等待扫码"}
-        elif error_code:
-            _qr_sessions.pop(session, None)
-            return {"ok": False, "status": "expired", "message": f"二维码已过期 (code={error_code})"}
-        else:
-            return {"ok": False, "status": "waiting", "message": "等待扫码"}
-
-
-async def _verify_netease_cookie(cookie: str) -> bool:
-    """验证网易云 Cookie：请求用户信息接口"""
-    try:
-        async with httpx.AsyncClient(timeout=8) as cli:
-            r = await cli.get(
-                "https://music.163.com/api/nuser/account/get",
-                headers={"Cookie": f"MUSIC_U={cookie}", "User-Agent": "Mozilla/5.0", "Referer": "https://music.163.com"},
-            )
-            if r.status_code == 200:
-                data = r.json()
-                return data.get("code") == 200
-            return False
-    except Exception:
-        return False
-
-
-async def _verify_qq_cookie(cookie: str) -> bool:
-    """验证 QQ音乐 Cookie"""
-    try:
-        async with httpx.AsyncClient(timeout=8) as cli:
-            r = await cli.get(
-                "https://u.y.qq.com/cgi-bin/musicu.fcg",
-                headers={"Cookie": f"uin={cookie}", "User-Agent": "Mozilla/5.0", "Referer": "https://y.qq.com"},
-                params={"data": '{"req_0":{"module":"userInfo.BaseUserInfoServer","method":"get_user_baseinfo_v2","param":{}}}'},
-            )
-            if r.status_code == 200:
-                data = r.json()
-                return data.get("req_0", {}).get("code") == 0
-            return False
-    except Exception:
-        return False
-
-
-async def _verify_kugou_cookie(cookie: str) -> bool:
-    """验证酷狗 Cookie：请求用户信息"""
-    try:
-        async with httpx.AsyncClient(timeout=8) as cli:
-            r = await cli.get(
-                "http://kmr.service.kugou.com/v1/user/get_info",
-                headers={"Cookie": f"kg_mid={cookie}", "User-Agent": "Mozilla/5.0"},
-            )
-            if r.status_code == 200:
-                data = r.json()
-                return data.get("status") == 1 or data.get("error_code") == 0
-            return False
-    except Exception:
-        return False
 
 
 @app.put("/api/config")
@@ -652,40 +220,98 @@ async def search_audio(body: SearchRequest):
     scraper_type = site["scraper_type"]
     keyword = body.tags or ""  # 国内站用 tags 字段做搜索关键词
 
-    # ── 国内音乐站 ──
+    # ── 国内音乐站（同时搜索所有平台） ──
     if scraper_type in ("netease", "qqmusic", "kugou"):
-        # 读取用户的 Cookie 配置
-        default_keys = {"netease": "MUSIC_U", "qqmusic": "uin", "kugou": "kg_mid"}
-        cookies = {}
-        cookie_conf = getattr(config, "cookies", None)
-        if cookie_conf:
-            raw = getattr(cookie_conf, scraper_type, "")
-            if raw:
-                if "=" in raw:
-                    # key=value 格式
-                    for pair in raw.split(";"):
-                        if "=" in pair:
-                            k, v = pair.strip().split("=", 1)
-                            cookies[k.strip()] = v.strip()
-                else:
-                    # 直接粘贴的值，用默认 key
-                    cookies[default_keys.get(scraper_type, "token")] = raw.strip()
+        keyword = body.tags or ""
+        if not keyword.strip():
+            raise HTTPException(400, "请输入搜索关键词")
 
-        try:
-            async with httpx.AsyncClient(timeout=30) as client:
-                scraper = get_scraper(scraper_type, client, cookies if cookies else None)
-                if not scraper:
-                    raise HTTPException(400, f"不支持的站点类型: {scraper_type}")
-                items = await asyncio.wait_for(
-                    scraper.search(keyword, body.max_items or 20), timeout=30
-                )
-        except asyncio.TimeoutError:
-            raise HTTPException(504, "搜索超时")
-        except Exception as e:
-            raise HTTPException(502, f"搜索失败: {str(e)[:200]}")
+        # 并行搜索所有 3 个国内平台（无需登录，多取一些做匹配排序）
+        req_limit = max(body.max_items or 20, 30)  # 每个平台多取候选
 
-        # 不自动入库，返回结果让用户选择加入待处理队列
-        return {"items": items, "count": len(items)}
+        async def _search_one(stype: str):
+            try:
+                async with httpx.AsyncClient(timeout=30) as client:
+                    scraper = get_scraper(stype, client, cookies=None)
+                    if not scraper:
+                        return []
+                    return await asyncio.wait_for(
+                        scraper.search(keyword, req_limit), timeout=30
+                    )
+            except Exception:
+                return []
+
+        results = await asyncio.gather(
+            _search_one("netease"),
+            _search_one("qqmusic"),
+            _search_one("kugou"),
+        )
+
+        # 合并 & 按匹配度排序
+        all_items = []
+        seen = set()
+        for items in results:
+            for item in items:
+                sid = str(item.get("id", ""))
+                if sid not in seen:
+                    seen.add(sid)
+                    all_items.append(item)
+
+        # ── 匹配度评分（歌名 + 歌手，不区分大小写） ──
+        kw = keyword.strip().lower()
+
+        def _score(item: dict) -> int:
+            title = (item.get("title") or "").lower()
+            author = (item.get("author") or "").lower()
+            score = 0
+
+            # 歌名匹配
+            if title == kw:
+                score += 100
+            elif title.startswith(kw):
+                score += 80
+            elif f" {kw} " in f" {title} ":
+                score += 60
+            elif kw in title:
+                score += 40
+
+            # 歌手匹配
+            if author == kw:
+                score += 30
+            elif author.startswith(kw):
+                score += 25
+            elif kw in author:
+                score += 15
+
+            # 歌名中每个词匹配加分
+            kw_words = kw.split()
+            title_words = title.split()
+            for w in kw_words:
+                if len(w) >= 2:
+                    for tw in title_words:
+                        if w == tw:
+                            score += 10
+                        elif tw.startswith(w) and len(w) >= 3:
+                            score += 5
+
+            # 歌手名中每个词匹配加分
+            author_words = author.replace(",", " ").replace("、", " ").split()
+            for w in kw_words:
+                if len(w) >= 2:
+                    for aw in author_words:
+                        if w == aw:
+                            score += 8
+                        elif aw.startswith(w) and len(w) >= 3:
+                            score += 3
+
+            return score
+
+        # 评分排序 + 过滤低匹配度（< 20 分丢弃）
+        scored = [(_score(it), it) for it in all_items]
+        scored.sort(key=lambda x: x[0], reverse=True)
+        all_items = [it for s, it in scored if s >= 20]
+
+        return {"items": all_items, "count": len(all_items), "sources": ["netease", "qqmusic", "kugou"]}
 
     # ── AudioJungle ──
     sc = SearchConfig(
@@ -815,24 +441,9 @@ async def download_items(body: DownloadRequest):
 
     # ── 国内站下载 ──
     if source in ("netease", "qqmusic", "kugou"):
-        # 读取 Cookie
-        default_keys = {"netease": "MUSIC_U", "qqmusic": "uin", "kugou": "kg_mid"}
-        cookies = {}
-        cookie_conf = getattr(config, "cookies", None)
-        if cookie_conf:
-            raw = getattr(cookie_conf, source, "")
-            if raw:
-                if "=" in raw:
-                    for pair in raw.split(";"):
-                        if "=" in pair:
-                            k, v = pair.strip().split("=", 1)
-                            cookies[k.strip()] = v.strip()
-                else:
-                    cookies[default_keys.get(source, "token")] = raw.strip()
-
         downloaded = 0
         async with httpx.AsyncClient(timeout=60) as client:
-            scraper = get_scraper(source, client, cookies if cookies else None)
+            scraper = get_scraper(source, client, cookies=None)
             if not scraper:
                 raise HTTPException(400, f"不支持的站点: {source}")
 

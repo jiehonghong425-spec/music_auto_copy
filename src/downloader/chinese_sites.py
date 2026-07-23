@@ -76,7 +76,7 @@ class NeteaseScraper:
                 "source": "netease",
                 "preview_url": self.OUTER_URL.format(sid),
                 "can_download": can_dl,
-                "dl_note": "✅ 可下载" if can_dl else "🔒 需VIP/Cookie",
+                "dl_note": "可下载" if can_dl else "需登录",
             })
         return results
 
@@ -154,7 +154,8 @@ class QQMusicScraper:
             return []
 
         results = []
-        has_cookie = bool(self.cookies)
+        # 检查是否有完整的登录 Cookie（不止一个 key）
+        has_cookie = bool(self.cookies) and len(self.cookies) > 0
         for s in songs:
             singers = ", ".join(si.get("name", "") for si in s.get("singer", []))
             songmid = s.get("songmid", "")
@@ -167,48 +168,65 @@ class QQMusicScraper:
                 "source": "qqmusic",
                 "preview_url": f"https://y.qq.com/n/ryqq/songDetail/{songmid}",
                 "can_download": has_cookie,
-                "dl_note": "✅ 可下载" if has_cookie else "🔒 需VIP/Cookie",
+                "dl_note": "可下载" if has_cookie else "需登录",
             })
         return results
 
     async def get_download_url(self, song_mid: str) -> Optional[str]:
-        """获取下载链接"""
-        payload = {
-            "req_1": {
-                "module": "vkey.GetVkeyServer",
-                "method": "CgiGetVkey",
-                "param": {
-                    "guid": "0",
-                    "songmid": [song_mid],
-                    "songtype": [0],
-                    "uin": self.cookies.get("uin", "0"),
-                    "loginflag": 1 if self.cookies else 0,
-                    "platform": "20",
-                },
-            }
-        }
-        headers = _merge_cookies(
-            {**BASE_HEADERS, "Referer": "https://y.qq.com"}, self.cookies
-        )
-        try:
-            r = await self.client.post(
-                self.SONG_URL_API, json=payload, headers=headers, timeout=10
-            )
-            r.raise_for_status()
-            data = r.json()
-            midurlinfo = data.get("req_1", {}).get("data", {}).get("midurlinfo", [])
-            if midurlinfo:
-                purl = midurlinfo[0].get("purl", "")
-                if purl:
-                    return f"http://ws.stream.qqmusic.qq.com/{purl}"
+        """获取下载链接 — 多策略尝试
 
-            # 兜底：用免费试听 URL
-            sip = data.get("req_1", {}).get("data", {}).get("sip", [])
-            testurl = data.get("req_1", {}).get("data", {}).get("testurl", "")
-            if testurl and sip:
-                return f"{sip[0]}{testurl}"
-        except Exception:
-            pass
+        策略 1: 官方 CgiGetVkey API（VIP Cookie 可获取高音质）
+        策略 2: testurl 兜底（免费低音质片段）
+        """
+        uin = self.cookies.get("uin", "") or self.cookies.get("p_uin", "0")
+        # 使用完整的 Cookie 上下文
+        headers = _merge_cookies(
+            {**BASE_HEADERS, "Referer": "https://y.qq.com",
+             "Origin": "https://y.qq.com"},
+            self.cookies,
+        )
+
+        # 策略 1: 官方 API — 用完整 Cookie 请求高音质
+        for guid in [uin, "0"]:
+            payload = {
+                "req_1": {
+                    "module": "vkey.GetVkeyServer",
+                    "method": "CgiGetVkey",
+                    "param": {
+                        "guid": str(guid),
+                        "songmid": [song_mid],
+                        "songtype": [0],
+                        "uin": str(uin),
+                        "loginflag": 1 if self.cookies else 0,
+                        "platform": "20",
+                    },
+                }
+            }
+            try:
+                r = await self.client.post(
+                    self.SONG_URL_API, json=payload, headers=headers, timeout=10
+                )
+                r.raise_for_status()
+                data = r.json()
+                midurlinfo = data.get("req_1", {}).get("data", {}).get("midurlinfo", [])
+                if midurlinfo:
+                    purl = midurlinfo[0].get("purl", "")
+                    if purl and purl.strip():
+                        # 尝试获取最高可用域名
+                        sip = data.get("req_1", {}).get("data", {}).get("sip", [])
+                        if sip:
+                            return f"{sip[0]}{purl}"
+                        return f"http://ws.stream.qqmusic.qq.com/{purl}"
+
+                # 兜底 testurl
+                testurl = data.get("req_1", {}).get("data", {}).get("testurl", "")
+                if testurl:
+                    sip = data.get("req_1", {}).get("data", {}).get("sip", [])
+                    if sip and testurl:
+                        return f"{sip[0]}{testurl}"
+            except Exception:
+                continue
+
         return None
 
 
@@ -240,7 +258,7 @@ class KugouScraper:
         except Exception:
             return []
 
-        has_cookie = bool(self.cookies)
+        has_cookie = bool(self.cookies) and len(self.cookies) > 0
         results = []
         for s in songs:
             results.append({
@@ -252,49 +270,57 @@ class KugouScraper:
                 "source": "kugou",
                 "preview_url": s.get("share_url", ""),
                 "can_download": has_cookie,
-                "dl_note": "✅ 可下载" if has_cookie else "🔒 需VIP/Cookie",
+                "dl_note": "可下载" if has_cookie else "需登录",
             })
         return results
 
     async def get_download_url(self, file_hash: str) -> Optional[str]:
         """获取下载链接 — 多策略尝试
 
-        策略 1: 官方 playInfo API（VIP Cookie 可能返回完整链接）
-        策略 2: 免费试听 CDN（60秒片段，无需登录）
+        策略 1: 官方 playInfo API（VIP Cookie 可获取完整链接+高音质）
+        策略 2: 128kbps hash 备选
+        策略 3: 免费试听 CDN（60秒片段，需 Cookie）
         """
         if not file_hash:
             return None
-        headers = _merge_cookies({**BASE_HEADERS}, self.cookies)
 
-        # 策略 1: 官方 API（无 Cookie = 可能空，有 Cookie = 可能完整）
+        headers = _merge_cookies(
+            {**BASE_HEADERS, "Referer": "https://www.kugou.com",
+             "Origin": "https://www.kugou.com"},
+            self.cookies,
+        )
+
+        # 策略 1: 官方 API — 完整 Cookie 请求高音质
         try:
             key_url = f"{self.SONG_INFO_API}?hash={file_hash}&cmd=playInfo"
             r = await self.client.get(key_url, headers=headers, timeout=10)
             r.raise_for_status()
             data = r.json()
 
-            # 直接 URL
+            # 直接 URL（VIP 用户可获得完整歌曲）
             url = data.get("url", "")
+            if url and url.startswith("http"):
+                # 检查是否是完整歌曲（非试听片段）
+                if "try_listen" not in url and len(url) > 20:
+                    return url
+
+            # backup_url（VIP 备选线路）
+            backup = data.get("backup_url", {})
+            if isinstance(backup, dict):
+                for k in sorted(backup.keys()):
+                    if backup[k] and str(backup[k]).startswith("http"):
+                        bu = str(backup[k])
+                        if "try_listen" not in bu:
+                            return bu
+
+            # 如果只有试听片段 URL，也返回（兜底）
             if url and url.startswith("http"):
                 return url
 
-            # backup_url
-            backup = data.get("backup_url", {})
-            if isinstance(backup, dict):
-                for k in backup:
-                    if backup[k] and str(backup[k]).startswith("http"):
-                        return str(backup[k])
-
-            # hash_offset 免费片段（酷狗 CDN 已封锁外部访问，此路不通）
-            # trans = data.get("trans_param", {})
-            # offset = trans.get("hash_offset", {})
-            # 酷狗免费试听 CDN 返回 502/403，无 Cookie 基本无法下载
-
-            # 使用 128kbps hash 作为备选
+            # 128kbps hash 备选
             extra = data.get("extra", {})
             hash_128 = extra.get("128hash", "")
             if hash_128 and hash_128 != file_hash:
-                # 重试用 128kbps hash
                 try:
                     r2 = await self.client.get(
                         f"{self.SONG_INFO_API}?hash={hash_128}&cmd=playInfo",

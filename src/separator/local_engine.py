@@ -235,6 +235,19 @@ class LocalSeparationEngine:
                     str(vocals_path) if vocals_path else "",
                 )
                 db.update_status(item_id, "separated")
+
+                # ── 归档源文件到 completed/ ──
+                src_file = Path(download_path)
+                completed_dir = Path(self.config.output_dir) / "completed"
+                completed_dir.mkdir(parents=True, exist_ok=True)
+                archived = completed_dir / src_file.name
+                if src_file.exists() and src_file != archived:
+                    try:
+                        shutil.move(str(src_file), str(archived))
+                        db.update_download_path(item_id, str(archived))
+                    except Exception:
+                        shutil.copy2(str(src_file), str(archived))
+
                 console.print(
                     f"  [green]✓ {safe_title}[/] "
                     f"[dim](伴奏: {instrumental_path.stat().st_size // 1024}KB, "

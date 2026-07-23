@@ -378,8 +378,8 @@ class Database:
         ]
 
     def get_all_items_light(self, status_filter: str = "", limit: int = 100, offset: int = 0) -> list[dict]:
-        """获取所有项目（仅必要字段，快速加载）"""
-        fields = "id, title, author, status, error_message"
+        """获取所有项目（含文件路径，供前端直接下载）"""
+        fields = "id, title, author, status, error_message, download_path, instrumental_path, vocals_path, preview_url"
         if status_filter:
             return [
                 dict(row)

@@ -128,7 +128,14 @@ tr:hover td{background:rgba(255,255,255,.015)}
 
 <div class="toasts" id="toasts"></div>
 
-<main class="main">
+<!-- 播放器 -->
+<div id="player-bar" style="display:none;position:fixed;bottom:0;left:0;right:0;background:var(--surface);border-top:1px solid var(--border);padding:6px 16px;z-index:100;align-items:center;gap:12px">
+  <button class="btn sm d" onclick="stopAudio()" style="padding:3px 8px">⏹</button>
+  <span id="player-title" style="font-size:12px;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0">未在播放</span>
+  <audio id="player-audio" style="height:28px;max-width:320px" controls></audio>
+</div>
+
+<main class="main" style="padding-bottom:60px">
 
 <!-- ═══════════════ DASHBOARD ═══════════════ -->
 <div id="page-dashboard" class="page active">
@@ -153,7 +160,7 @@ tr:hover td{background:rgba(255,255,255,.015)}
 
   <!-- 分离控制 -->
   <div class="actions">
-    <select id="sep-model" style="width:auto"><option value="htdemucs">htdemucs (快)</option><option value="htdemucs_ft">htdemucs_ft (高质量)</option></select>
+    <select id="sep-model" style="width:auto"><option value="htdemucs">htdemucs（快速）</option><option value="htdemucs_ft">htdemucs_ft（高精度）</option></select>
     <select id="sep-jobs" style="width:auto"><option value="1">1 线程</option><option value="2">2 线程</option><option value="4" selected>4 线程</option><option value="8">8 线程</option></select>
     <button class="btn p" onclick="startSeparation()">▶ 开始分离</button>
     <button class="btn d" onclick="stopSeparation()">⏹ 停止</button>
@@ -168,34 +175,31 @@ tr:hover td{background:rgba(255,255,255,.015)}
 <!-- ═══════════════ SOURCES ═══════════════ -->
 <div id="page-sources" class="page">
   <h2>音频搜索</h2>
-  <div class="form-row">
-    <div class="form-grp">
-      <label>站点</label>
-      <select id="search-site" onchange="onSiteChange()"></select>
-    </div>
-    <div class="form-grp">
-      <label>关键词</label>
-      <input id="search-keyword" placeholder="歌曲名 / 歌手名" onkeydown="if(event.key==='Enter')searchAudio()">
-    </div>
-  </div>
-  <div class="form-row" id="aj-params">
-    <div class="form-grp"><label>最高价格 $</label><input id="search-price" type="number" value="19"></div>
-    <div class="form-grp"><label>数量</label><input id="search-max" type="number" value="20"></div>
-    <div class="form-grp"><label>标签</label><input id="search-tags" placeholder="corporate, inspiring"></div>
-    <div class="form-grp"><label>排序</label><select id="search-sort"><option value="date">日期</option><option value="sales">销量</option><option value="rating">评分</option><option value="price">价格</option></select></div>
-  </div>
-  <div class="actions">
+  <p style="font-size:12px;color:var(--muted);margin-bottom:16px">同时搜索网易云音乐 + QQ音乐 + 酷狗音乐，按匹配度排序，低于 20% 匹配度的结果自动过滤</p>
+  <div style="display:flex;gap:8px;max-width:600px;margin-bottom:20px">
+    <input id="search-keyword" placeholder="输入歌曲名或歌手名" onkeydown="if(event.key==='Enter')searchAudio()" style="flex:1">
     <button class="btn p" onclick="searchAudio()">🔍 搜索</button>
-    <button class="btn" onclick="addAllToQueue()" id="btn-add-all" style="display:none">+ 全部加入队列</button>
   </div>
+  <button class="btn" onclick="addAllToQueue()" id="btn-add-all" style="display:none;margin-bottom:16px">+ 全部加入队列</button>
   <div id="search-results"></div>
 
-  <h3>站点管理</h3>
-  <div class="actions">
-    <button class="btn" onclick="showAddSite()">+ 添加站点</button>
-    <button class="btn" onclick="refreshSites()">🔄 刷新状态</button>
+  <h3 style="margin-top:32px">站点管理</h3>
+  <div class="actions" style="margin-bottom:8px">
+    <button class="btn sm" onclick="showAddSite()">+ 添加</button>
+    <button class="btn sm" onclick="refreshSites()">🔄 刷新</button>
   </div>
-  <div class="table-wrap"><table><thead><tr><th>名称</th><th>URL</th><th>类型</th><th>连接</th><th>操作</th></tr></thead><tbody id="sites-tbody"></tbody></table></div>
+  <div class="table-wrap"><table><thead><tr><th>名称</th><th>类型</th><th>状态</th><th>操作</th></tr></thead><tbody id="sites-tbody"></tbody></table></div>
+</div>
+
+<!-- 添加站点弹窗 -->
+<div class="modal-overlay" id="modal-overlay" style="display:none" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <h3>添加站点</h3>
+    <div class="form-grp" style="margin-bottom:12px"><label>名称</label><input id="site-name" placeholder="如：网易云音乐"></div>
+    <div class="form-grp" style="margin-bottom:12px"><label>网址</label><input id="site-url" placeholder="https://music.163.com"></div>
+    <div class="form-grp" style="margin-bottom:16px"><label>类型</label><select id="site-type"><option value="netease">网易云音乐</option><option value="qqmusic">QQ音乐</option><option value="kugou">酷狗音乐</option><option value="audiojungle">AudioJungle（国外）</option></select></div>
+    <div class="actions" style="justify-content:flex-end"><button class="btn" onclick="closeModal()">取消</button><button class="btn p" onclick="addSite()">确定</button></div>
+  </div>
 </div>
 
 <!-- ═══════════════ FILES ═══════════════ -->
@@ -203,7 +207,7 @@ tr:hover td{background:rgba(255,255,255,.015)}
   <h2>文件管理</h2>
   <div class="actions">
     <select id="file-filter" onchange="loadFiles()" style="width:auto">
-      <option value="">全部</option><option value="downloaded">已下载</option><option value="separated">已分离</option><option value="failed">失败</option>
+      <option value="">全部</option><option value="pending">待处理</option><option value="downloaded">已下载</option><option value="separated">已分离</option><option value="failed">失败</option>
     </select>
     <button class="btn" onclick="loadFiles()">🔄 刷新</button>
   </div>
@@ -227,7 +231,7 @@ tr:hover td{background:rgba(255,255,255,.015)}
 <div id="page-settings" class="page">
   <h2>设置</h2>
   <div class="form-row">
-    <div class="form-grp"><label>模型</label><select id="cfg-model"><option value="htdemucs">htdemucs (快)</option><option value="htdemucs_ft">htdemucs_ft (高质量)</option></select></div>
+    <div class="form-grp"><label>模型</label><select id="cfg-model"><option value="htdemucs">htdemucs（快速）</option><option value="htdemucs_ft">htdemucs_ft（高精度）</option></select></div>
     <div class="form-grp"><label>并行线程</label><div class="slider"><input type="range" id="cfg-jobs" min="1" max="8" value="4" oninput="this.nextElementSibling.textContent=this.value"><span>4</span></div></div>
     <div class="form-grp"><label>下载并发</label><input id="cfg-concurrency" type="number" value="5"></div>
     <div class="form-grp"><label>设备</label><select id="cfg-device"><option value="auto">自动</option><option value="cpu">CPU</option><option value="cuda">CUDA</option></select></div>
@@ -235,56 +239,6 @@ tr:hover td{background:rgba(255,255,255,.015)}
   <div class="form-grp"><label>输出目录</label><input id="cfg-output" value="./separated"></div>
   <button class="btn p" onclick="saveSettings()">💾 保存</button>
 
-  <h3>扫码登录</h3>
-  <p style="font-size:12px;color:var(--muted);margin-bottom:12px">使用手机 App 扫描二维码登录，自动保存 VIP Cookie，无需输入密码</p>
-  <div class="actions" style="margin-bottom:16px">
-    <button class="btn p" onclick="showQR('netease')">🎵 网易云扫码</button>
-    <button class="btn" onclick="showQR('qqmusic')">🎶 QQ扫码</button>
-    <button class="btn" onclick="showQR('kugou')">🎤 酷狗扫码</button>
-  </div>
-  <!-- QR 显示区域（默认隐藏） -->
-  <div id="qr-area" style="display:none;margin:0 0 20px;padding:24px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);text-align:center">
-    <div style="font-size:14px;font-weight:600;margin-bottom:16px" id="qr-site-label"></div>
-    <img id="qr-image" style="width:200px;height:200px;border-radius:8px;background:#fff;padding:8px;display:none" alt="扫码登录">
-    <div style="margin-top:14px;font-size:13px" id="qr-status"></div>
-    <button class="btn sm" onclick="cancelQR()" id="qr-cancel-btn" style="display:none;margin-top:12px">取消</button>
-  </div>
-
-<h3 style="margin-bottom:8px">或手动粘贴 Cookie</h3>
-  <div class="form-grp" style="margin-bottom:12px">
-    <label>一键粘贴完整 Cookie</label>
-    <input id="cfg-cookie-raw" placeholder="F12 → Application → Cookies → music.163.com → 复制 MUSIC_U 的值贴到这里" style="font-family:monospace;font-size:12px">
-  </div>
-  <div class="form-row">
-    <div class="form-grp">
-      <label>网易云 <span id="cookie-status-netease"></span></label>
-      <input id="cfg-cookie-netease" placeholder="MUSIC_U 值">
-    </div>
-    <div class="form-grp">
-      <label>QQ音乐 <span id="cookie-status-qqmusic"></span></label>
-      <input id="cfg-cookie-qqmusic" placeholder="uin 值">
-    </div>
-    <div class="form-grp">
-      <label>酷狗 <span id="cookie-status-kugou"></span></label>
-      <input id="cfg-cookie-kugou" placeholder="kg_mid 值">
-    </div>
-  </div>
-  <button class="btn p" onclick="saveCookies()">💾 保存并验证 Cookie</button>
-  <span id="cookie-verify-result" style="margin-left:12px;font-size:13px"></span>
-</div>
-
-</main>
-
-<!-- Add Site Modal -->
-<div class="modal-overlay" id="modal-overlay" style="display:none" onclick="if(event.target===this)closeModal()">
-  <div class="modal">
-    <h3>添加站点</h3>
-    <div class="form-grp" style="margin-bottom:12px"><label>名称</label><input id="site-name" placeholder="网易云音乐"></div>
-    <div class="form-grp" style="margin-bottom:12px"><label>URL</label><input id="site-url" placeholder="https://music.163.com"></div>
-    <div class="form-grp" style="margin-bottom:16px"><label>类型</label><select id="site-type"><option value="netease">网易云音乐</option><option value="qqmusic">QQ音乐</option><option value="kugou">酷狗</option><option value="audiojungle">AudioJungle</option></select></div>
-    <div class="actions" style="justify-content:flex-end"><button class="btn" onclick="closeModal()">取消</button><button class="btn p" onclick="addSite()">确定</button></div>
-  </div>
-</div>
 
 <script>
 const API='/api';
@@ -302,6 +256,25 @@ function nav(p){
 
 // ── Toast ───────────────────────────────────
 function toast(m,t='ok'){const e=document.createElement('div');e.className='toast '+t;e.textContent=m;document.getElementById('toasts').appendChild(e);setTimeout(()=>{e.style.opacity='0';setTimeout(()=>e.remove(),300)},2800)}
+
+// ── 音频播放 ────────────────────────────────
+function playAudio(url,title){
+  const bar=document.getElementById('player-bar');
+  const audio=document.getElementById('player-audio');
+  const label=document.getElementById('player-title');
+  bar.style.display='flex';
+  label.textContent='▶ '+title;
+  audio.src=url;
+  audio.load();
+  audio.play().catch(()=>{});
+}
+function stopAudio(){
+  const audio=document.getElementById('player-audio');
+  audio.pause();
+  audio.src='';
+  document.getElementById('player-bar').style.display='none';
+  document.getElementById('player-title').textContent='未在播放';
+}
 
 // ── API helper ──────────────────────────────
 async function api(m,u,b){
@@ -321,7 +294,7 @@ let evt=null;
 function initSSE(){
   if(evt)evt.close();
   evt=new EventSource(API+'/progress/stream');
-  evt.onmessage=function(e){try{const p=JSON.parse(e.data);['pending','downloaded','separated','failed'].forEach(s=>{const el=document.getElementById('s-'+s);if(el&&p.stats)el.textContent=p.stats[s]||0});document.getElementById('p-bar').style.width=(p.total?(p.completed/p.total*100):0)+'%';document.getElementById('p-title').textContent=p.title||'空闲';document.getElementById('p-count').textContent=p.completed+'/'+p.total;document.getElementById('p-eta').textContent=p.eta_seconds?'剩余 ~'+Math.round(p.eta_seconds/60)+'min':'';document.getElementById('p-status').innerHTML=p.running?'RUNNING':'IDLE'}catch(e){}};
+  evt.onmessage=function(e){try{const p=JSON.parse(e.data);['pending','downloaded','separated','failed'].forEach(s=>{const el=document.getElementById('s-'+s);if(el&&p.stats)el.textContent=p.stats[s]||0});document.getElementById('p-bar').style.width=(p.total?(p.completed/p.total*100):0)+'%';document.getElementById('p-title').textContent=p.title||'空闲';document.getElementById('p-count').textContent=p.completed+'/'+p.total;document.getElementById('p-eta').textContent=p.eta_seconds?'剩余 ~'+Math.round(p.eta_seconds/60)+'分钟':'';document.getElementById('p-status').innerHTML=p.running?'🟢 运行中':'⚪ 空闲'}catch(e){}};
   evt.onerror=function(){setTimeout(initSSE,5000)};
 }
 initSSE();
@@ -365,7 +338,15 @@ async function loadTabItems(){
         let meta=[];
         if(i.author)meta.push(i.author);
         if(i.error_message)meta.push('❌ '+i.error_message);
-        return `<div class="list-item" id="item-${i.id}"><div class="li-info"><div class="li-title">${i.title||'(无标题)'}</div><div class="li-meta">${meta.join(' · ')||'点击操作加载详情...'}</div></div><div class="li-detail" id="detail-${i.id}">${tabActions(i)}</div></div>`;
+        // 播放按钮：有预览链接或本地文件的都可以播
+        let playBtn='';
+        const preview=i.preview_url||'';
+        const dl=i.download_path||'';
+        const ins=i.instrumental_path||'';
+        if(preview) playBtn=`<button class="btn sm" onclick="playAudio('${preview}','${(i.title||'').replace(/'/g,"\\'")}')" title="试听">▶</button> `;
+        else if(ins) playBtn=`<button class="btn sm" onclick="playAudio('${API}/files/${i.id}/download?stem=instrumental','${(i.title||'').replace(/'/g,"\\'")}')" title="播放伴奏">▶</button> `;
+        else if(dl) playBtn=`<button class="btn sm" onclick="playAudio('${API}/files/${i.id}/download?stem=download','${(i.title||'').replace(/'/g,"\\'")}')" title="播放">▶</button> `;
+        return `<div class="list-item" id="item-${i.id}"><div class="li-info"><div class="li-title">${playBtn}${i.title||'(无标题)'}</div><div class="li-meta">${meta.join(' · ')||''}</div></div><div class="li-detail" id="detail-${i.id}">${tabActions(i)}</div></div>`;
       }).join('');
     }
 
@@ -387,7 +368,7 @@ function tabActions(i){
   }else if(t==='downloaded'){
     return `<button class="btn sm p" onclick="startSepOne(${i.id})">分离</button>`;
   }else if(t==='separated'){
-    return `<button class="btn sm" onclick="loadAndDownload(${i.id})">COPY</button>`;
+    return `<button class="btn sm" onclick="loadAndDownload(${i.id})">下载</button>`;
   }else if(t==='failed'){
     return `<button class="btn sm" onclick="startSepOne(${i.id})">🔄 重试</button>`;
   }
@@ -403,16 +384,16 @@ async function loadAndDownload(id){
     let html='<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">';
     if(item.instrumental_path){
       const p=item.instrumental_path.replace(/\\/g,'/');
-      html+=`<a href="${API}/files/${id}/download?stem=instrumental" class="btn sm" download>COPY 伴奏</a>`;
-      html+=`<select onchange="downloadFormat(${id},'instrumental',this.value)" style="width:auto;padding:4px 6px;font-size:11px"><option>WAV</option><option>MP3</option><option>FLAC</option><option>OGG</option></select>`;
+      html+=`<a href="${API}/files/${id}/download?stem=instrumental" class="btn sm" download>🎵 伴奏</a>`;
+      html+=`<select onchange="downloadFormat(${id},'instrumental',this.value)" style="width:auto;padding:4px 6px;font-size:11px"><option>WAV</option><option>MP3</option></select>`;
       html+=`<span class="src" style="font-size:10px">${p.split('/').pop()}</span>`;
     }
     if(item.vocals_path){
-      html+=`<a href="${API}/files/${id}/download?stem=vocals" class="btn sm" download>COPY 人声</a>`;
-      html+=`<select onchange="downloadFormat(${id},'vocals',this.value)" style="width:auto;padding:4px 6px;font-size:11px"><option>WAV</option><option>MP3</option><option>FLAC</option><option>OGG</option></select>`;
+      html+=`<a href="${API}/files/${id}/download?stem=vocals" class="btn sm" download>🎤 人声</a>`;
+      html+=`<select onchange="downloadFormat(${id},'vocals',this.value)" style="width:auto;padding:4px 6px;font-size:11px"><option>WAV</option><option>MP3</option></select>`;
     }
     if(!item.instrumental_path&&!item.vocals_path&&item.download_path){
-      html+=`<a href="${API}/files/${id}/download?stem=download" class="btn sm" download>COPY 源文件</a>`;
+      html+=`<a href="${API}/files/${id}/download?stem=download" class="btn sm" download>📥 源文件</a>`;
     }
     html+='</div>';
     targets.forEach(el=>el.innerHTML=html);
@@ -443,42 +424,47 @@ async function downloadSingle(id){
 // SSE 已负责更新统计数字，无需定时轮询
 
 // ── Sites & Search ──────────────────────────
-let searchResults=[],currentSiteType='audiojungle';
+let searchResults=[];
 
+// ── 站点管理 ────────────────────────────────
 async function loadSites(){
   try{
-    const tb=document.getElementById('sites-tbody'),sel=document.getElementById('search-site');
-    tb.innerHTML='<tr><td colspan="5">加载中...</td></tr>';
+    const tb=document.getElementById('sites-tbody');
+    tb.innerHTML='<tr><td colspan="4">加载中...</td></tr>';
     const sites=await api('GET','/sites');
-    tb.innerHTML='';sel.innerHTML='';
-    sites.forEach(s=>{
+    tb.innerHTML=sites.map(s=>{
       const on=s.online!==false;
-      tb.innerHTML+=`<tr><td>${s.name}</td><td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${s.url}</td><td><span class="tag info">${s.scraper_type}</span></td><td><span class="tag ${on?'ok':'err'}">${on?'ON':'OFF'}</span></td><td><button class="btn sm d" onclick="deleteSite(${s.id})">删除</button></td></tr>`;
-      sel.innerHTML+=`<option value="${s.id}" data-type="${s.scraper_type}">${s.name}</option>`;
-    });
-    onSiteChange();
+      const typeName={netease:'网易云',qqmusic:'QQ音乐',kugou:'酷狗',audiojungle:'AudioJungle'}[s.scraper_type]||s.scraper_type;
+      return`<tr><td>${s.name}</td><td><span class="tag info">${typeName}</span></td><td><span class="tag ${on?'ok':'err'}">${on?'在线':'离线'}</span></td><td><button class="btn sm d" onclick="deleteSite(${s.id})">删除</button></td></tr>`;
+    }).join('')||'<tr><td colspan="4" style="color:var(--muted)">暂无站点</td></tr>';
   }catch(e){}
 }
 async function refreshSites(){
   try{await api('POST','/sites/refresh');loadSites();toast('状态已刷新')}catch(e){toast(e.message,'er')}
 }
-function onSiteChange(){
-  const s=document.getElementById('search-site'),o=s.options[s.selectedIndex];currentSiteType=o?.dataset?.type||'audiojungle';
-  const cn=currentSiteType!=='audiojungle';document.getElementById('aj-params').style.display=cn?'none':'grid';
+function showAddSite(){document.getElementById('modal-overlay').style.display='flex'}
+function closeModal(){document.getElementById('modal-overlay').style.display='none'}
+async function addSite(){
+  try{await api('POST','/sites',{name:document.getElementById('site-name').value,url:document.getElementById('site-url').value,scraper_type:document.getElementById('site-type').value});closeModal();loadSites();toast('站点已添加')}catch(e){toast(e.message,'er')}
 }
+async function deleteSite(id){if(!confirm('确认删除此站点？'))return;try{await api('DELETE','/sites/'+id);loadSites()}catch(e){}}
+
 async function searchAudio(){
   const d=document.getElementById('search-results');d.innerHTML='<p style="color:var(--muted);padding:20px 0">搜索中...</p>';
-  try{const kw=document.getElementById('search-keyword').value||(currentSiteType!=='audiojungle'?'热门':'');
-  const b={site_id:parseInt(document.getElementById('search-site').value),price_max:parseInt(document.getElementById('search-price').value)||19,sort:document.getElementById('search-sort').value,max_items:parseInt(document.getElementById('search-max').value)||0};
-  b.tags=currentSiteType!=='audiojungle'?kw:document.getElementById('search-tags').value;
+  const kw=document.getElementById('search-keyword').value.trim();
+  if(!kw){d.innerHTML='<div class="empty">请输入歌曲名或歌手名</div>';return}
+  try{
+  const b={site_id:2,price_max:0,sort:'date',max_items:30,tags:kw};
   const r=await api('POST','/search',b);searchResults=r.items;document.getElementById('btn-add-all').style.display=r.count?'inline-flex':'none';
   if(!r.count){d.innerHTML='<div class="empty">无结果，换个关键词试试</div>';return}
   d.innerHTML='<h3>'+r.count+' 个结果</h3>';
   r.items.forEach(item=>{
-    const can=item.can_download!==false,dur=item.duration?' · '+item.duration+'s':'';
+    const dur=item.duration?' · '+item.duration+'s':'';
     const t=item.title.replace(/'/g,"\\'"),a=(item.author||'').replace(/'/g,"\\'"),u=item.preview_url||'',src=item.source||'';
-    const btn=can?`<button class="btn sm p" onclick="addToQueue('${item.id}','${t}','${a}','${u}','${src}')">+ 加入队列</button>`:`<button class="btn sm" disabled>🔒 需VIP</button>`;
-    d.innerHTML+=`<div class="list-item"><div class="li-info"><div class="li-title">${item.title} <span class="tag ${can?'ok':'warn'}" style="font-size:10px">${item.dl_note||(can?'可下载':'需VIP')}</span></div><div class="li-meta">${item.author||''} · ${item.source||''} · ${item.album||''}${dur}</div></div>${btn}</div>`;
+    const srcLabel={netease:'网易云',qqmusic:'QQ音乐',kugou:'酷狗'}[src]||src||'';
+    const playBtn=item.preview_url?`<button class="btn sm" onclick="playAudio('${item.preview_url}','${t}')" title="试听">▶</button> `:'';
+    const btn=`${playBtn}<button class="btn sm p" onclick="addToQueue('${item.id}','${t}','${a}','${u}','${src}')">+ 加入队列</button>`;
+    d.innerHTML+=`<div class="list-item"><div class="li-info"><div class="li-title">${item.title} <span class="tag info" style="font-size:10px">${srcLabel}</span></div><div class="li-meta">${item.author||''} · ${item.album||''}${dur}</div></div>${btn}</div>`;
   })}catch(e){d.innerHTML='<div class="empty">搜索失败: '+e.message+'</div>'}
 }
 async function addAllToQueue(){
@@ -486,19 +472,50 @@ async function addAllToQueue(){
   const items=searchResults.map(i=>({id:i.id,title:i.title,author:i.author||'',preview_url:i.preview_url||'',source:i.source||'',source_id:i.id}));
   const r=await api('POST','/queue/add',{items});toast('已加入 '+r.added+' 首');loadQueue()
 }
-function showAddSite(){document.getElementById('modal-overlay').style.display='flex'}
-function closeModal(){document.getElementById('modal-overlay').style.display='none'}
-async function addSite(){
-  try{await api('POST','/sites',{name:document.getElementById('site-name').value,url:document.getElementById('site-url').value,scraper_type:document.getElementById('site-type').value});closeModal();loadSites();toast('站点已添加')}catch(e){toast(e.message,'er')}
-}
-async function deleteSite(id){if(!confirm('删除此站点？'))return;try{await api('DELETE','/sites/'+id);loadSites()}catch(e){}}
 
 // ── Files ───────────────────────────────────
+const STATUS_LABELS={pending:'🔵 待处理',downloading:'⏳ 下载中',downloaded:'🟡 已下载',separating:'🔄 分离中',separated:'🟢 已分离',failed:'🔴 失败'};
+const STATUS_TAGS={separated:'ok',downloaded:'info',failed:'err',pending:'warn',downloading:'warn',separating:'warn'};
+
 async function loadFiles(){
   try{const f=document.getElementById('file-filter')?.value||'';const r=await api('GET','/files?status='+f);
   document.getElementById('files-tbody').innerHTML=r.items.map(i=>{
-    const st=i.status,sc=st==='separated'?'ok':st==='downloaded'?'info':st==='failed'?'err':'warn';
-    return`<tr><td>${(i.title||'').substring(0,60)}</td><td>${i.author||''}</td><td><span class="tag ${sc}">${st}</span></td><td id="fbtn-${i.id}"><button class="btn sm" onclick="loadAndDownload(${i.id})">COPY</button></td></tr>`;
+    const st=i.status,sc=STATUS_TAGS[st]||'warn',label=STATUS_LABELS[st]||st;
+    // 播放按钮
+    let playBtn='';
+    const preview=i.preview_url||'';
+    const ins=i.instrumental_path||'';
+    const dl=i.download_path||'';
+    const tt=(i.title||'').replace(/'/g,"\\'");
+    if(preview) playBtn=`<button class="btn sm" onclick="playAudio('${preview}','${tt}')" title="试听">▶</button> `;
+    else if(ins) playBtn=`<button class="btn sm" onclick="playAudio('${API}/files/${i.id}/download?stem=instrumental','${tt}')" title="播放伴奏">▶</button> `;
+    else if(dl) playBtn=`<button class="btn sm" onclick="playAudio('${API}/files/${i.id}/download?stem=download','${tt}')" title="播放">▶</button> `;
+
+    let btns=playBtn;
+    if(st==='separated'){
+      // 已分离：直接展示伴奏和人声下载
+      if(i.instrumental_path){
+        btns+=`<a href="${API}/files/${i.id}/download?stem=instrumental" class="btn sm" download>🎵 伴奏</a> `;
+        btns+=`<select onchange="downloadFormat(${i.id},'instrumental',this.value)" style="width:auto;padding:4px 6px;font-size:11px"><option>WAV</option><option>MP3</option></select> `;
+      }
+      if(i.vocals_path){
+        btns+=`<a href="${API}/files/${i.id}/download?stem=vocals" class="btn sm" download>🎤 人声</a> `;
+        btns+=`<select onchange="downloadFormat(${i.id},'vocals',this.value)" style="width:auto;padding:4px 6px;font-size:11px"><option>WAV</option><option>MP3</option></select>`;
+      }
+      if(!i.instrumental_path&&!i.vocals_path) btns='<span style="color:var(--muted);font-size:12px">文件缺失</span>';
+    }else if(st==='downloaded'){
+      // 已下载：下载源文件 + 可分离
+      btns=`<a href="${API}/files/${i.id}/download?stem=download" class="btn sm" download>📥 源文件</a> <button class="btn sm p" onclick="startSepOne(${i.id})">🎵 分离</button>`;
+    }else if(st==='failed'){
+      // 失败：可重试
+      btns=`<button class="btn sm" onclick="startSepOne(${i.id})">🔄 重试</button>`;
+      if(i.error_message) btns+=`<span style="font-size:11px;color:var(--red);margin-left:8px">${i.error_message.substring(0,60)}</span>`;
+    }else if(st==='pending'){
+      btns=`<button class="btn sm p" onclick="downloadSingle(${i.id})">📥 下载</button> <button class="btn sm d" onclick="removeFromQueue(${i.id})">移除</button>`;
+    }else{
+      btns='<span style="color:var(--muted);font-size:12px">处理中...</span>';
+    }
+    return`<tr><td>${(i.title||'').substring(0,50)}</td><td>${i.author||''}</td><td><span class="tag ${sc}">${label}</span></td><td style="white-space:nowrap">${btns}</td></tr>`;
   }).join('')}catch(e){}
 }
 function downloadFormat(id,stem,fmt){
@@ -512,107 +529,12 @@ if(dz){dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('d
 async function uploadFiles(files){
   if(!files.length)return;const fd=new FormData();for(const f of files)fd.append('files',f);
   try{const r=await fetch(API+'/upload',{method:'POST',body:fd});const d=await r.json();const div=document.getElementById('upload-results');
-  div.innerHTML='<h3>上传结果</h3>'+d.results.map(r=>`<div class="list-item"><div class="li-info"><div class="li-title">${r.name}</div><div class="li-meta">${r.ok?`✅ ${(r.size/1e6).toFixed(1)}MB · ${r.type} · 已加入待处理队列`:'❌ '+r.error}</div></div></div>`).join('');
+  div.innerHTML='<h3>上传结果</h3>'+d.results.map(r=>`<div class="list-item"><div class="li-info"><div class="li-title">${r.name}</div><div class="li-meta">${r.ok?`✅ ${(r.size/1e6).toFixed(1)}MB · ${r.type==='video'?'视频':'音频'} · 已加入待处理队列`:'❌ '+r.error}</div></div></div>`).join('');
   toast('上传 '+d.results.filter(r=>r.ok).length+'/'+d.count)}catch(e){toast('上传失败','er')}
 }
 async function startSepOne(id){try{await api('POST','/separate',{item_ids:[id]});toast('已开始分离')}catch(e){toast(e.message,'er')}}
 
-// ── Settings / QR Login ────────────────────
-const SITE_NAMES={netease:'网易云音乐',qqmusic:'QQ音乐',kugou:'酷狗音乐'};
-let _qrTimer=null,_qrSession='',_qrSite='';
-
-async function showQR(site){
-  cancelQR();
-  const area=document.getElementById('qr-area');
-  const img=document.getElementById('qr-image');
-  const status=document.getElementById('qr-status');
-  const label=document.getElementById('qr-site-label');
-  area.style.display='block';
-  img.style.display='none';
-  status.textContent='⏳ 生成二维码中...';
-  label.textContent=SITE_NAMES[site];
-  document.getElementById('qr-cancel-btn').style.display='inline-flex';
-  _qrSite=site;
-  try{
-    const r=await api('POST','/login/'+site+'/qr');
-    if(!r.ok){status.textContent='❌ 生成失败';return}
-    _qrSession=r.session;
-    if(!r.qrimg){status.textContent='❌ 未获取到二维码';return}
-    img.src=r.qrimg;
-    img.style.display='block';
-    status.textContent='📱 请使用 '+SITE_NAMES[site]+' App 扫描二维码';
-    _pollQR();
-  }catch(e){
-    status.textContent='❌ 生成二维码失败: '+e.message;
-    document.getElementById('qr-cancel-btn').style.display='inline-flex';
-  }
-}
-
-async function _pollQR(){
-  if(!_qrSession)return;
-  try{
-    const r=await api('GET','/login/'+_qrSite+'/qr/check?session='+encodeURIComponent(_qrSession));
-    const status=document.getElementById('qr-status');
-    if(r.ok&&r.status==='confirmed'){
-      clearTimeout(_qrTimer);
-      status.innerHTML='<span class="tag ok">🎉 '+SITE_NAMES[_qrSite]+' 登录成功！Cookie 已保存</span>';
-      document.getElementById('qr-cancel-btn').style.display='none';
-      // 自动填入 cookie 并验证
-      const site=_qrSite;
-      if(r.token){
-        document.getElementById('cfg-cookie-'+site).value=r.token;
-        document.getElementById('cookie-status-'+site).innerHTML='<span class="tag ok">已登录</span>';
-      }
-      toast(SITE_NAMES[site]+' 扫码登录成功');
-      _qrSession='';
-      return;
-    }
-    switch(r.status){
-      case 'waiting': status.textContent='等待扫码...'; break;
-      case 'scanned': status.textContent='✅ 已扫码，请在手机上确认登录'; break;
-      case 'expired': status.innerHTML='<span class="tag err">⏰ 二维码已过期，请重新扫码</span>'; document.getElementById('qr-cancel-btn').style.display='none'; _qrSession=''; return;
-      default: status.textContent=r.message||'等待中...';
-    }
-    _qrTimer=setTimeout(_pollQR,2000);
-  }catch(e){
-    _qrTimer=setTimeout(_pollQR,3000);
-  }
-}
-
-function cancelQR(){
-  clearTimeout(_qrTimer);
-  _qrTimer=null;
-  _qrSession='';
-  document.getElementById('qr-area').style.display='none';
-}
-
-async function saveCookies(){
-  const raw=document.getElementById('cfg-cookie-raw').value;
-  const body=raw
-    ?`raw=${encodeURIComponent(raw)}`
-    :`netease=${encodeURIComponent(document.getElementById('cfg-cookie-netease').value)}&qqmusic=${encodeURIComponent(document.getElementById('cfg-cookie-qqmusic').value)}&kugou=${encodeURIComponent(document.getElementById('cfg-cookie-kugou').value)}`;
-  const res=document.getElementById('cookie-verify-result');
-  res.innerHTML='<span style="color:var(--yellow)">验证中...</span>';
-  ['netease','qqmusic','kugou'].forEach(k=>{document.getElementById('cookie-status-'+k).textContent=''});
-  try{
-    const r=await fetch(API+'/cookies',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body});
-    const d=await r.json();
-    const valid=d.valid||{};
-    let icons=[];
-    ['netease','qqmusic','kugou'].forEach(k=>{
-      const v=valid[k];
-      const el=document.getElementById('cookie-status-'+k);
-      if(v===true){el.innerHTML='<span class="tag ok">有效</span>';icons.push(k+' OK');}
-      else if(v===false){el.innerHTML='<span class="tag err">无效</span>';icons.push(k+' FAIL');}
-      else if(d.parsed&&d.parsed[k]){el.innerHTML='<span class="tag warn">未知</span>'}
-    });
-    res.innerHTML=icons.length?`<span style="color:${icons.some(i=>i.includes('FAIL'))?'var(--red)':'var(--green)'};font-weight:600">${icons.join(' · ')}</span>`:'<span style="color:var(--muted)">已保存</span>';
-    if(icons.length)toast('Cookie: '+icons.join(', '));
-  }catch(e){
-    res.innerHTML='<span style="color:var(--red)">验证失败: '+e.message+'</span>';
-  }
-}
-
+// ── Settings ───────────────────────────────
 async function saveSettings(){
   try{await api('PUT','/config',{model:document.getElementById('cfg-model').value,jobs:parseInt(document.getElementById('cfg-jobs').value),concurrency:parseInt(document.getElementById('cfg-concurrency').value),device:document.getElementById('cfg-device').value,output_dir:document.getElementById('cfg-output').value});
   toast('设置已保存');}catch(e){toast('保存失败: '+e.message,'er')}
@@ -623,7 +545,6 @@ async function loadSettings(){
   document.getElementById('cfg-jobs').value=c.jobs||4;document.getElementById('cfg-jobs').nextElementSibling.textContent=c.jobs||4;
   document.getElementById('sep-jobs').value=c.jobs||4;document.getElementById('cfg-concurrency').value=c.concurrency||5;
   document.getElementById('cfg-device').value=c.device||'auto';document.getElementById('cfg-output').value=c.output_dir||'./separated';
-  if(c.cookies){['netease','qqmusic','kugou'].forEach(k=>{const el=document.getElementById('cfg-cookie-'+k);if(el&&c.cookies[k])el.placeholder=c.cookies[k]})}
   }catch(e){}
 }
 loadSettings();

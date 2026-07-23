@@ -1,9 +1,9 @@
 """配置管理模块 — 使用 Pydantic 加载和验证 config.yaml"""
 
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Literal, Optional, Any
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class AudioJungleConfig(BaseModel):
@@ -75,11 +75,49 @@ class ServerConfig(BaseModel):
     host: str = "0.0.0.0"
 
 
+def _coerce_cookie_value(v: Any) -> dict:
+    """将旧版字符串 Cookie 格式自动转为字典（向后兼容）"""
+    import json as _json
+    if isinstance(v, dict):
+        return v
+    if isinstance(v, str):
+        if not v.strip():
+            return {}
+        stripped = v.strip()
+        # 尝试解析 JSON
+        if stripped.startswith("{"):
+            try:
+                return _json.loads(stripped)
+            except (_json.JSONDecodeError, TypeError):
+                pass
+        # 旧版单字符串格式: "key=value; key2=value2" 或纯 token 值
+        result = {}
+        for part in v.split(";"):
+            part = part.strip()
+            if "=" in part:
+                k, val = part.split("=", 1)
+                result[k.strip()] = val.strip()
+            elif part:
+                result["_raw"] = part.strip()
+        return result
+    return {}
+
+
 class CookiesConfig(BaseModel):
-    """VIP Cookie 注入配置"""
-    netease: str = ""
-    qqmusic: str = ""
-    kugou: str = ""
+    """VIP Cookie 注入配置 — 字典格式存储完整 Cookie Jar
+
+    格式: {"MUSIC_U": "xxx", "__csrf": "yyy", ...}
+
+    向后兼容旧版单字符串格式（加载时自动迁移）
+    """
+    netease: dict = {}
+    qqmusic: dict = {}
+    kugou: dict = {}
+
+    @field_validator("netease", "qqmusic", "kugou", mode="before")
+    @classmethod
+    def _coerce_fields(cls, v: Any) -> dict:
+        return _coerce_cookie_value(v)
 
 
 class Config(BaseModel):
